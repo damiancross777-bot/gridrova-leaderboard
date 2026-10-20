@@ -33,6 +33,6 @@ jobs:
         run: |
           [ -f emulator-tests.log ] || exit 0
           # Failures and totals as one annotation so they are readable without log access.
-          summary=$(grep -E "^# (tests|pass|fail)|^not ok|error:|expected|actual|Error|code:" emulator-tests.log | head -120)
+          summary=$(grep -E "^(# |ℹ )(tests|pass|fail)|^✔|^✖|^not ok|expected|actual|code:" emulator-tests.log | head -120)
           summary="${summary//'%'/'%25'}"; summary="${summary//$'\n'/'%0A'}"
           echo "::notice title=Emulator test summary::${summary}"
