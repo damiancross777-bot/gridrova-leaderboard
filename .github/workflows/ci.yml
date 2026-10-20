@@ -22,6 +22,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm ci
+      - run: npm install -g firebase-tools@15.34.0
       - name: Unit tests
         run: npm test
       - name: Emulator acceptance tests (Auth + Firestore)
