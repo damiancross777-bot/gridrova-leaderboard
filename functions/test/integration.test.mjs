@@ -410,6 +410,8 @@ test("public API exposes only alias, rank and time — no UID, token or private 
   const r = await call("GET", "/v1/public/leaderboard", { origin: ORIGIN, query: { date: "2026-10-20" } });
   assert.equal(r.statusCode, 200);
   assert.match(r.headers["cache-control"], /^public, max-age=30$/);
+  assert.equal(r.headers["x-frame-options"], "DENY");
+  assert.equal(r.headers["content-security-policy"], "default-src 'none'; frame-ancestors 'none'");
   const text = JSON.stringify(r.body);
   for (const p of ps) {
     assert.ok(!text.includes(p.uid));

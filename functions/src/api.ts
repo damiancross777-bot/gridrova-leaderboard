@@ -26,7 +26,12 @@ export function clearPublicCacheForTests(): void {
 
 function send(res: Response, status: number, body: unknown, cache = "private, no-store") {
   res.set("Cache-Control", cache);
+  // JSON-only API: forbid sniffing, framing, referrers and any active content.
   res.set("X-Content-Type-Options", "nosniff");
+  res.set("X-Frame-Options", "DENY");
+  res.set("Referrer-Policy", "no-referrer");
+  res.set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+  res.set("Strict-Transport-Security", "max-age=31536000");
   res.status(status).json({ ...(body as object), serverNow: new Date(now()).toISOString() });
 }
 
