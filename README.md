@@ -28,6 +28,12 @@ Base URL: `https://australia-southeast1-<projectId>.cloudfunctions.net/api`
 | `POST /v1/attempts/start` | Bearer | Creates or resumes today's single attempt; returns the frozen board |
 | `POST /v1/attempts/{id}/finish` | Bearer | Verifies the full solve; time is measured by the server |
 | `POST /v1/me/awards/claim` | Bearer | Immutable receipts, 100 per page, replay-safe |
+| `GET /v1/leaderboard/nearby?date=&above=0-5&below=0-5` | Bearer | Your position: ≤5 above, you, ≤5 below (≤11 rows); `status` ranked/pending/unranked |
+| `POST /v1/journey/start` | Bearer | Opens a server-timed attempt for one journey level (exact v5 board) |
+| `POST /v1/journey/{id}/finish` | Bearer | Records a complete, valid, not-too-fast solve (daily cap applies) |
+| `GET /v1/journey/progress` | Bearer | Levels recorded online for the caller |
+| `GET /v1/champions?cursor=` | Bearer | "Recorded online" gallery, 100/page, signed cursor, no UIDs |
+| `GET / POST / DELETE /v1/me/save` | Bearer (linked account) | Private cloud save, optimistic `expectedVersion`, `SAVE_CONFLICT` on races, ≤600 KB |
 
 Every response includes `serverNow`. Errors are `{error:{code}}` using `NOT_OPEN, ALREADY_FINISHED, INELIGIBLE, INVALID_SOLUTION, SUBMISSION_CLOSED, RATE_LIMITED, ACCOUNT_REQUIRED, UNAUTHENTICATED, FORBIDDEN_ORIGIN, BAD_REQUEST, PAYLOAD_TOO_LARGE, NOT_FOUND, CONFLICT`.
 
@@ -51,6 +57,9 @@ Every response includes `serverNow`. Errors are `{error:{code}}` using `NOT_OPEN
 | `requireLinkedAccount` | false | Refuse anonymous-only identities (turn on after the game adds Google sign-in) |
 | `enforceAppCheck` | false | Require `X-Firebase-AppCheck` (turn on only after the app sends it) |
 | `minPlausibleElapsedMs` | 20000 | Below this, results are held for review |
+| `championsRecordingEnabled` | false | Accept journey-level recordings for the Champions gallery |
+| `journeyDailyCap` | 60 | Max new journey levels recorded per player per UTC day (1–300) |
+| `cloudSaveEnabled` | false | Private cloud save routes (linked, non-anonymous accounts only) |
 
 To disqualify before settlement, set `standings/<date>/entries/<uid>.eligible = false` and `verification = "disqualified"`. To release a held result, set `eligible = true` and `verification = "verified"`. Finalized podiums are never rewritten.
 
@@ -77,6 +86,14 @@ Tests: `cd functions && npm test` (unit) and `npm run test:emulators` (needs Jav
 - [ ] **Game:** App Check (Play Integrity) sending tokens, then `enforceAppCheck: true`
 - [ ] **Game:** map the error codes above to friendly messages, and show "official time = server time" in ranked results
 - [ ] Production configuration separately approved and deployed
+
+## Champions: what "Recorded online" means
+
+A level counts once it's completed against a server-timed attempt on the exact published board (content version 5, fingerprint 1462119492), with every target found, no faster than `max(8 s, 1.5 s × words)`, and within the daily cap. The gallery entry is created exactly once, when the server holds all 300 distinct level IDs. Offline completions, and version-4 boards embedded in older saves, aren't recorded; replaying those levels online records them. Rescues are stored as reported. They aren't verified purchases, because the wallet is local in this release. Since all journey answers ship in the app, this records completion; it doesn't prove a human played. It's labelled accordingly.
+
+## Nearby ranks: cost and freshness
+
+A player's rank is three COUNT aggregations: Firestore bills about 1 read per 1,000 index entries ahead of the player, cached per player for 60 s (live) or 1 h (closed days). The window around the player uses two keyset queries anchored on the player's own sort key, so it reads ≤10 documents whatever the board size. At 10,000 daily entrants and a refresh a minute that's about 30 reads per refresh. Past ~100k daily entrants, switch to a periodic materialized rank snapshot (scheduled job writing rank into each entry). No offsets or full scans are used anywhere.
 
 ## Known limitations
 

@@ -47,7 +47,8 @@ export async function putSave(caller: Caller, body: unknown, flags: Flags, nowMs
     tx.set(ref, { snapshot, version: next, updatedAtMs: nowMs, updatedAt: FieldValue.serverTimestamp() });
     return next;
   });
-  return { version, updatedAt: new Date(nowMs).toISOString() };
+  // Same shape as GET so the app can show the copy it just saved.
+  return { version, snapshot: snapshot as string, updatedAt: new Date(nowMs).toISOString() };
 }
 
 /** DELETE /v1/me/save — player-initiated removal. Also run automatically on account deletion. */
