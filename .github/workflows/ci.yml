@@ -11,13 +11,13 @@ jobs:
       run:
         working-directory: functions
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: functions/package-lock.json
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -25,4 +25,14 @@ jobs:
       - name: Unit tests
         run: npm test
       - name: Emulator acceptance tests (Auth + Firestore)
-        run: npm run test:emulators
+        run: |
+          set -o pipefail
+          npm run test:emulators 2>&1 | tee emulator-tests.log
+      - name: Report test results as annotation
+        if: always()
+        run: |
+          [ -f emulator-tests.log ] || exit 0
+          # Failures and totals as one annotation so they are readable without log access.
+          summary=$(grep -E "^# (tests|pass|fail)|^not ok|error:|expected|actual|Error|code:" emulator-tests.log | head -120)
+          summary="${summary//'%'/'%25'}"; summary="${summary//$'\n'/'%0A'}"
+          echo "::notice title=Emulator test summary::${summary}"
