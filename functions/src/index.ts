@@ -4,6 +4,8 @@ import { defineSecret, defineString } from "firebase-functions/params";
 import { REGION } from "./config.js";
 import { handle } from "./api.js";
 import { settleDue } from "./settlement.js";
+import { deleteSaveForUid } from "./saves.js";
+import * as functionsV1 from "firebase-functions/v1";
 
 // Non-secret, per-project value set in functions/.env.<projectId> (committed examples only).
 const ALLOWED_ORIGINS = defineString("ALLOWED_ORIGINS", {
@@ -45,3 +47,12 @@ export const settleDaily = onSchedule(
     await settleDue();
   },
 );
+
+// Account deletion removes the private cloud save. Receipts, ledgers and settlements are kept
+// as the prize audit trail (they hold no personal data beyond the UID).
+export const deleteAccountData = functionsV1
+  .region(REGION)
+  .auth.user()
+  .onDelete(async (user) => {
+    await deleteSaveForUid(user.uid);
+  });

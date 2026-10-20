@@ -189,15 +189,34 @@ export async function topEntries(date: string, limit: number): Promise<{ uid: st
   }));
 }
 
+// Per-instance rank cache: a player's rank is recomputed at most once per TTL per instance.
+const rankCache = new Map<string, { at: number; rank: number }>();
+const RANK_TTL_LIVE_MS = 60_000;
+const RANK_TTL_FINAL_MS = 3_600_000;
+export function clearRankCacheForTests(): void {
+  rankCache.clear();
+}
+
 /**
- * Scalable private rank: three COUNT aggregations (billed ~1 read per 1,000 entries)
- * instead of reading the whole board on every refresh.
+ * Scalable private rank: three COUNT aggregations (billed ~1 read per 1,000 index entries
+ * ahead of the player) instead of reading the board, cached per player for 60 s (live) or
+ * 1 h (closed days, whose standings no longer change).
  */
-export async function rankOf(date: string, uid: string): Promise<{ rank: number | null; elapsedMs: number } | null> {
-  const snap = await paths.entry(date, uid).get();
+export async function rankOf(
+  date: string,
+  uid: string,
+  entrySnap?: FirebaseFirestore.DocumentSnapshot,
+): Promise<{ rank: number | null; elapsedMs: number; asOf?: string } | null> {
+  const snap = entrySnap ?? (await paths.entry(date, uid).get());
   if (!snap.exists) return null;
   const { elapsedMs, finishedAtMs, eligible } = snap.data()!;
   if (eligible !== true) return { rank: null, elapsedMs };
+  const key = `${date}:${uid}`;
+  const closed = date < utcDay(now());
+  const hit = rankCache.get(key);
+  if (hit && now() >= hit.at && now() - hit.at < (closed ? RANK_TTL_FINAL_MS : RANK_TTL_LIVE_MS)) {
+    return { rank: hit.rank, elapsedMs, asOf: new Date(hit.at).toISOString() };
+  }
   const base = paths.entries(date).where("eligible", "==", true);
   const [a, b, c] = await Promise.all([
     base.where("elapsedMs", "<", elapsedMs).count().get(),
@@ -207,7 +226,54 @@ export async function rankOf(date: string, uid: string): Promise<{ rank: number 
       .count()
       .get(),
   ]);
-  return { rank: a.data().count + b.data().count + c.data().count + 1, elapsedMs };
+  const rank = a.data().count + b.data().count + c.data().count + 1;
+  if (rankCache.size > 50_000) rankCache.clear();
+  rankCache.set(key, { at: now(), rank });
+  return { rank, elapsedMs, asOf: new Date(now()).toISOString() };
+}
+
+const clamp05 = (v: unknown, dflt: number) => {
+  if (v === undefined) return dflt;
+  const n = Number(v);
+  if (!Number.isInteger(n)) fail("BAD_REQUEST");
+  return Math.max(0, Math.min(5, n));
+};
+
+/**
+ * GET /v1/leaderboard/nearby — up to `above` players ahead, the caller, up to `below` behind
+ * (each bounded 0–5, so at most 11 rows). Two keyset queries anchored on the caller's own
+ * sort key: no offsets, no scans, cost independent of how many people are on the board.
+ */
+export async function nearby(date: string, uid: string, aboveQ: unknown, belowQ: unknown) {
+  const above = clamp05(aboveQ, 5);
+  const below = clamp05(belowQ, 5);
+  const snap = await paths.entry(date, uid).get();
+  const me = await rankOf(date, uid, snap);
+  if (!me || me.rank === null) {
+    return { entries: [], me, status: me ? "pending" : "unranked", asOf: new Date(now()).toISOString() };
+  }
+  const d = snap.data()!;
+  const key = [d.elapsedMs, d.finishedAtMs, d.uid];
+  const base = paths.entries(date).where("eligible", "==", true);
+  const [up, down] = await Promise.all([
+    above
+      ? base.orderBy("elapsedMs", "desc").orderBy("finishedAtMs", "desc").orderBy("uid", "desc").startAfter(...key).limit(above).get()
+      : null,
+    below
+      ? base.orderBy("elapsedMs").orderBy("finishedAtMs").orderBy("uid").startAfter(...key).limit(below).get()
+      : null,
+  ]);
+  const row = (doc: FirebaseFirestore.QueryDocumentSnapshot, rank: number) => ({
+    rank,
+    displayName: safeDisplayName(doc.get("displayName")),
+    elapsedMs: doc.get("elapsedMs") as number,
+    isYou: false,
+  });
+  // Ranks are relative to the caller's (possibly cached) rank; a rank can never go below 1.
+  const ahead = (up?.docs ?? []).map((doc, i) => row(doc, Math.max(1, me.rank! - 1 - i))).reverse();
+  const behind = (down?.docs ?? []).map((doc, i) => row(doc, me.rank! + 1 + i));
+  const self = { rank: me.rank, displayName: safeDisplayName(d.displayName), elapsedMs: d.elapsedMs, isYou: true };
+  return { entries: [...ahead, self, ...behind], me, status: "ranked", asOf: me.asOf };
 }
 
 /** Final results come from the immutable settlement snapshot; live ones from the index. */

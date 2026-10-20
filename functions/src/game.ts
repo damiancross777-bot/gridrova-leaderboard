@@ -46,16 +46,22 @@ export function rankedSeed(date: string, salt: string): string {
 }
 
 export async function generateRankedBoard(date: string, salt: string): Promise<Board> {
-  const seed = rankedSeed(date, salt);
-  const category = hash(seed) % 15;
-  const fallback = fallbacks.find(
-    (b) => b.category === category && b.difficulty === RULES.contentDifficulty,
-  );
-  if (!fallback) throw new Error("No Balanced profile for category " + category);
-  const board = (await makeRuntimeBoard({ seed, category, p: fallback.profile, fallback })) as Board;
-  const issues = validateBoard(board);
-  if (issues.length) throw new Error("Generated board failed validation: " + issues.join(", "));
-  return board;
+  // A bundled fallback board is never acceptable for ranked play: its answers ship inside the
+  // app. If the generator would fall back, retry with another secret-derived seed instead.
+  for (let retry = 0; retry < 5; retry++) {
+    const seed = rankedSeed(date, salt) + (retry ? `:r${retry}` : "");
+    const category = hash(seed) % 15;
+    const fallback = fallbacks.find(
+      (b) => b.category === category && b.difficulty === RULES.contentDifficulty,
+    );
+    if (!fallback) continue;
+    const board = (await makeRuntimeBoard({ seed, category, p: fallback.profile, fallback })) as Board;
+    if (board.fallback || board.seed.startsWith("fallback:")) continue;
+    const issues = validateBoard(board);
+    if (issues.length) continue;
+    return board;
+  }
+  throw new Error("Could not generate a unique ranked board for " + date);
 }
 
 export const gameContentVersion = CONTENT_VERSION as number;

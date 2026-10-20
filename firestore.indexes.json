@@ -4,10 +4,62 @@
       "collectionGroup": "entries",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "eligible", "order": "ASCENDING" },
-        { "fieldPath": "elapsedMs", "order": "ASCENDING" },
-        { "fieldPath": "finishedAtMs", "order": "ASCENDING" },
-        { "fieldPath": "uid", "order": "ASCENDING" }
+        {
+          "fieldPath": "eligible",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "elapsedMs",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "finishedAtMs",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "eligible",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "elapsedMs",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "finishedAtMs",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "uid",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "champions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "completedAtMs",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "galleryId",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],

@@ -14,6 +14,11 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "METHOD_NOT_ALLOWED"
+  | "CONTENT_MISMATCH"
+  | "TOO_FAST"
+  | "DAILY_LIMIT"
+  | "SAVE_CONFLICT"
+  | "INVALID_SAVE"
   | "INTERNAL";
 
 const STATUS: Record<ErrorCode, number> = {
@@ -31,6 +36,11 @@ const STATUS: Record<ErrorCode, number> = {
   NOT_FOUND: 404,
   CONFLICT: 409,
   METHOD_NOT_ALLOWED: 405,
+  CONTENT_MISMATCH: 409,
+  TOO_FAST: 422,
+  DAILY_LIMIT: 429,
+  SAVE_CONFLICT: 409,
+  INVALID_SAVE: 400,
   INTERNAL: 500,
 };
 

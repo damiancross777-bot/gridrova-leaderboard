@@ -27,6 +27,10 @@ export const LIMITS = Object.freeze({
   finish: { windowSec: 60, max: 10 },
   claim: { windowSec: 60, max: 20 },
   privateRead: { windowSec: 60, max: 60 },
+  journey: { windowSec: 60, max: 30 },
+  save: { windowSec: 60, max: 10 },
+  /** Cloud save bodies only; everything else keeps maxBodyBytes. */
+  maxSaveBodyBytes: 700 * 1024,
   /** Per-instance, per-IP limit for the unauthenticated public endpoint. */
   publicRead: { windowSec: 60, max: 120 },
 });
