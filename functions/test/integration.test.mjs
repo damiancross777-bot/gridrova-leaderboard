@@ -479,7 +479,7 @@ test("nearby is honest about unranked and pending players and uses settlement ti
 // ================================================================ Champions (recorded online)
 const levels = JSON.parse(readFileSync(new URL("../lib/game/levels.json", import.meta.url), "utf8"));
 const jStart = (p, level, over = {}) =>
-  call("POST", "/v1/journey/start", { token: p.token, body: { level, contentVersion: 5, seed: levels[level - 1].seed, ...over } });
+  call("POST", "/v1/journey/start", { token: p.token, body: { level, contentVersion: 5, seed: levels[level - 1]?.seed ?? "none", ...over } });
 const jFinish = (p, attemptId, level, over = {}) =>
   call("POST", `/v1/journey/${encodeURIComponent(attemptId)}/finish`, {
     token: p.token,
