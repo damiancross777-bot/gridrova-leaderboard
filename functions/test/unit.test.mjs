@@ -26,8 +26,9 @@ test("same date produces the identical validated 8x8 board for every caller and 
   assert.equal(a.grid.length, 8);
   assert.ok(a.grid.every((r) => r.length === 8));
   assert.ok(a.targets.every((t) => t.word.length <= 8));
-  // Category comes from the seed, not the device.
+  // Category comes from the seed, not the device; never a bundled fallback board.
   assert.equal(a.category, hash(a.seed.replace(/:\d+$/, "")) % 15);
+  assert.ok(!a.fallback && !a.seed.startsWith("fallback:"));
 });
 
 test("thirty consecutive days all generate valid boards", async () => {

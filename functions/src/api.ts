@@ -7,7 +7,9 @@ import { LIMITS } from "./config.js";
 import { getFlags } from "./flags.js";
 import { requireCaller } from "./identity.js";
 import { limitPlayer, limitPublic } from "./ratelimit.js";
-import { startAttempt, finishAttempt, parseBoardDate, boardView, rankOf } from "./competition.js";
+import { startAttempt, finishAttempt, parseBoardDate, boardView, rankOf, nearby } from "./competition.js";
+import { startJourney, finishJourney, journeyProgress, championsPage } from "./journey.js";
+import { getSave, putSave, deleteSave } from "./saves.js";
 import { claimAwards } from "./claims.js";
 
 export interface Deps {
@@ -35,7 +37,7 @@ function applyCors(req: Request, res: Response, deps: Deps): boolean {
   if (!deps.allowedOrigins.includes(origin)) return false;
   res.set("Access-Control-Allow-Origin", origin);
   res.set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Firebase-AppCheck");
-  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.set("Access-Control-Max-Age", "3600");
   return true;
 }
@@ -47,8 +49,9 @@ export async function handle(req: Request, res: Response, deps: Deps): Promise<v
       res.status(204).end();
       return;
     }
-    if ((req.rawBody?.length ?? 0) > LIMITS.maxBodyBytes) fail("PAYLOAD_TOO_LARGE");
     const path = req.path.replace(/\/+$/, "");
+    const bodyLimit = path === "/v1/me/save" ? LIMITS.maxSaveBodyBytes : LIMITS.maxBodyBytes;
+    if ((req.rawBody?.length ?? 0) > bodyLimit) fail("PAYLOAD_TOO_LARGE");
 
     // ---- Public, unauthenticated, read-only -------------------------------------------
     if (path === "/v1/public/leaderboard") {
@@ -86,6 +89,14 @@ export async function handle(req: Request, res: Response, deps: Deps): Promise<v
       });
       return;
     }
+    if (path === "/v1/leaderboard/nearby") {
+      if (req.method !== "GET") fail("METHOD_NOT_ALLOWED");
+      await limitPlayer(caller.uid, "read", LIMITS.privateRead);
+      const date = parseBoardDate(req.query.date);
+      const [view, near] = await Promise.all([boardView(date), nearby(date, caller.uid, req.query.above, req.query.below)]);
+      send(res, 200, { date, finalized: view.finalized, ...near });
+      return;
+    }
     if (path === "/v1/attempts/start") {
       if (!isPost) fail("METHOD_NOT_ALLOWED");
       if (Object.keys(req.body ?? {}).length) fail("BAD_REQUEST");
@@ -104,6 +115,41 @@ export async function handle(req: Request, res: Response, deps: Deps): Promise<v
       if (!isPost) fail("METHOD_NOT_ALLOWED");
       await limitPlayer(caller.uid, "claim", LIMITS.claim);
       send(res, 200, await claimAwards(caller, req.body ?? {}));
+      return;
+    }
+    // ---- 300-Level Champions ("Recorded online") ----------------------------------------
+    if (path === "/v1/journey/start") {
+      if (!isPost) fail("METHOD_NOT_ALLOWED");
+      await limitPlayer(caller.uid, "journey", LIMITS.journey);
+      send(res, 200, await startJourney(caller, req.body, flags));
+      return;
+    }
+    const journeyFinish = /^\/v1\/journey\/([^/]{1,128})\/finish$/.exec(path);
+    if (journeyFinish) {
+      if (!isPost) fail("METHOD_NOT_ALLOWED");
+      await limitPlayer(caller.uid, "journey", LIMITS.journey);
+      send(res, 200, await finishJourney(caller, decodeURIComponent(journeyFinish[1]), req.body, flags));
+      return;
+    }
+    if (path === "/v1/journey/progress") {
+      if (req.method !== "GET") fail("METHOD_NOT_ALLOWED");
+      await limitPlayer(caller.uid, "read", LIMITS.privateRead);
+      send(res, 200, await journeyProgress(caller));
+      return;
+    }
+    if (path === "/v1/champions") {
+      if (req.method !== "GET") fail("METHOD_NOT_ALLOWED");
+      await limitPlayer(caller.uid, "read", LIMITS.privateRead);
+      send(res, 200, await championsPage(req.query.cursor, deps.challengeSalt));
+      return;
+    }
+    // ---- Private cloud save (linked accounts only) ---------------------------------------
+    if (path === "/v1/me/save") {
+      await limitPlayer(caller.uid, "save", LIMITS.save);
+      if (req.method === "GET") send(res, 200, await getSave(caller, flags));
+      else if (isPost) send(res, 200, await putSave(caller, req.body, flags, now()));
+      else if (req.method === "DELETE") send(res, 200, await deleteSave(caller, flags));
+      else fail("METHOD_NOT_ALLOWED");
       return;
     }
     fail("NOT_FOUND");

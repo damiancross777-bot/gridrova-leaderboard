@@ -17,6 +17,12 @@ export interface Flags {
   enforceAppCheck: boolean;
   /** Finishes faster than this are stored but held for review, not ranked. */
   minPlausibleElapsedMs: number;
+  /** Accept journey-level recordings for the 300-Level Champions gallery. */
+  championsRecordingEnabled: boolean;
+  /** Maximum NEW journey levels recorded per player per UTC day (300 levels takes ≥ 300/cap days). */
+  journeyDailyCap: number;
+  /** Private cloud save routes (linked accounts only). */
+  cloudSaveEnabled: boolean;
 }
 
 export const DEFAULT_FLAGS: Flags = Object.freeze({
@@ -25,6 +31,9 @@ export const DEFAULT_FLAGS: Flags = Object.freeze({
   requireLinkedAccount: false,
   enforceAppCheck: false,
   minPlausibleElapsedMs: 20_000,
+  championsRecordingEnabled: false,
+  journeyDailyCap: 60,
+  cloudSaveEnabled: false,
 });
 
 let cache: { at: number; value: Flags } | null = null;
@@ -43,6 +52,12 @@ export async function getFlags(): Promise<Flags> {
       Number.isInteger(d.minPlausibleElapsedMs) && d.minPlausibleElapsedMs >= 0
         ? d.minPlausibleElapsedMs
         : DEFAULT_FLAGS.minPlausibleElapsedMs,
+    championsRecordingEnabled: d.championsRecordingEnabled === true,
+    journeyDailyCap:
+      Number.isInteger(d.journeyDailyCap) && d.journeyDailyCap >= 1 && d.journeyDailyCap <= 300
+        ? d.journeyDailyCap
+        : DEFAULT_FLAGS.journeyDailyCap,
+    cloudSaveEnabled: d.cloudSaveEnabled === true,
   };
   cache = { at: now(), value };
   return value;

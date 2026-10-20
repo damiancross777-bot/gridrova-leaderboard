@@ -1,6 +1,7 @@
-import { validPodiumReceipt } from "./leaderboard.mjs";
+import {missions,recordActivity,weekKey,prefixComplete} from "./activities.mjs";
+import { validPodiumReceipt, hasCompletedJourney } from "./leaderboard.mjs";
 import { categories, bonusLexicon, banned } from "./vocabulary.mjs";
-export const CONTENT_VERSION = 4;
+export const CONTENT_VERSION = 5;
 export const tuning = {
   startCoins: 100,
   targetPoints: 10,
@@ -14,6 +15,7 @@ export const tuning = {
   timedPointMultiplier: 2,
   nudgeCost: 15,
   traceCost: 40,
+  rescueCost: 100,
   nudgeRecharge: 45,
   completionCoins: 25,
   chapterCoins: 100,
@@ -137,7 +139,10 @@ export function profile(level) {
     max,
     dirs,
     phase,
-    overlap: level < 31 ? 0.08 : level < 121 ? 0.22 : 0.36,
+    overlap: level <= 5 ? 0.08 : level < 31 ? 0.18 : level < 121 ? 0.26 : 0.36,
+    minDirections: Math.min(dirs.length, level <= 30 ? 3 : level <= 60 ? 4 : 5),
+    maxPerDirection: Math.ceil(count * (dirs.length === 1 ? 1 : dirs.length === 2 ? 0.65 : 0.45)),
+    minCrossings: level <= 5 ? 0 : level <= 15 ? 1 : level <= 80 ? 2 : level <= 200 ? 3 : 4,
     fillerSimilarity: level <= 60 ? 0 : level <= 200 ? 0.12 : 0.2,
     familiarity: "familiar-category-and-subtheme",
     timeMedian: level <= 5 ? 45 : level <= 30 ? 85 : level <= 120 ? 150 : 220,
@@ -239,6 +244,21 @@ export function scanBonus(grid, targets) {
       }
   return [...out].sort();
 }
+export function layoutStats(board) {
+  const directionCounts = {}, cells = new Map();
+  for (const t of board.targets) {
+    const dx = Math.sign(t.path.at(-1).x-t.path[0].x), dy = Math.sign(t.path.at(-1).y-t.path[0].y);
+    const d = directions.findIndex(v => v[0] === dx && v[1] === dy);
+    directionCounts[d] = (directionCounts[d] || 0) + 1;
+    for (const c of t.path) {
+      const key = `${c.x},${c.y}`;
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push([dx,dy]);
+    }
+  }
+  const crossings = [...cells.values()].filter(axes => axes.some((v,i) => axes.slice(i+1).some(w => v[0]*w[1] !== v[1]*w[0]))).length;
+  return {directionCounts, directions:Object.keys(directionCounts).length, crossings};
+}
 export function validateBoard(board) {
   let issues = [],
     { grid, targets, profile: p } = board,
@@ -277,6 +297,10 @@ export function validateBoard(board) {
     Math.floor(targets.reduce((s, t) => s + t.word.length, 0) * p.overlap)
   )
     issues.push("Overlap limit");
+  const layout = layoutStats(board);
+  if (layout.directions < (p.minDirections || 1)) issues.push("Direction variety");
+  if (Math.max(...Object.values(layout.directionCounts)) > (p.maxPerDirection || p.count)) issues.push("Direction balance");
+  if (layout.crossings < (p.minCrossings || 0)) issues.push("Crossing minimum");
   for (const w of banned)
     if (occurrences(grid, w).length) issues.push("Disallowed: " + w);
   return issues;
@@ -292,13 +316,18 @@ export function tryGenerate({ id, seed, category, p, words }) {
     shared = 0,
     budget = Math.floor(words.join("").length * p.overlap);
   const place = (index) => {
-    if (index === words.length) return true;
-    if (++nodes > 5000) return false;
+    const used = placed.map(t => directions.findIndex(d => d[0] === Math.sign(t.path.at(-1).x-t.path[0].x) && d[1] === Math.sign(t.path.at(-1).y-t.path[0].y)));
+    const counts = used.reduce((out,d) => (out[d]=(out[d]||0)+1,out),{});
+    const distinct = new Set(used).size;
+    if (distinct + words.length-index < (p.minDirections || 1)) return false;
+    if (index === words.length) return distinct >= (p.minDirections || 1) && layoutStats({targets:placed}).crossings >= (p.minCrossings || 0);
+    if (++nodes > 300) return false;
     let w = words[index],
       choices = [];
     for (let y = 0; y < rows; y++)
       for (let x = 0; x < columns; x++)
         for (let d of p.dirs) {
+          if ((counts[d] || 0) >= (p.maxPerDirection || p.count)) continue;
           let [dx, dy] = directions[d],
             path = pathBetween(
               { x, y },
@@ -317,6 +346,11 @@ export function tryGenerate({ id, seed, category, p, words }) {
             }
             if (v) overlap++;
           }
+          // Shared letters should form real crossings, not same-line nesting.
+          if (ok && overlap && placed.some(t => {
+            const ex=t.path.at(-1).x-t.path[0].x, ey=t.path.at(-1).y-t.path[0].y;
+            return dx*ey === dy*ex && t.path.some(c => path.some(v => c.x===v.x && c.y===v.y));
+          })) ok=false;
           if (ok && shared + overlap <= budget)
             choices.push({ path, overlap, d });
         }
@@ -338,7 +372,13 @@ export function tryGenerate({ id, seed, category, p, words }) {
       choices = choices.filter((c) => c.d === newDirection);
     if (index > 0 && newDirection !== null)
       choices = choices.filter((c) => c.d !== newDirection);
-    for (const { path, overlap } of choices) {
+    // Shuffle ties, then favour underused directions and useful matching-letter crossings.
+    const needsCrossing = layoutStats({targets:placed}).crossings < (p.minCrossings || 0);
+    choices.sort((a,b) => {
+      const score = c => (!counts[c.d] && distinct < (p.minDirections || 1) ? 100 : 0) + (needsCrossing && c.overlap ? 30 : 0) - (counts[c.d] || 0)*5;
+      return score(b)-score(a);
+    });
+    for (const { path, overlap } of choices.slice(0, 24)) {
       let changed = [];
       for (let k = 0; k < path.length; k++) {
         let c = path[k];
@@ -399,7 +439,7 @@ function pickWords(pool, p, rr, usage = {}) {
   const ranked = shuffle(pool, rr).sort(
     (a, b) => (usage[a] || 0) - (usage[b] || 0),
   );
-  while (words.reduce((n, w) => n + w.length, 0) > columns * rows * 0.88) {
+  while (words.reduce((n, w) => n + w.length, 0) > columns * rows * 0.75) {
     const replacement = ranked.find(
       (w) => !words.includes(w) && w.length < words[0].length,
     );
@@ -488,6 +528,7 @@ export function initialState(now = Date.now()) {
     settings: {
       sound: true,
       music: false,
+      volume: 1,
       haptics: true,
       reducedMotion: false,
       contrast: false,
@@ -497,6 +538,7 @@ export function initialState(now = Date.now()) {
       grid: "light",
       palette: 0,
       tutorialDone: false,
+      gentleHelp: true,
     },
     active: null,
     events: [],
@@ -523,6 +565,13 @@ function award(s, key, amount) {
   s.coins += amount;
   return true;
 }
+function unlockChampion(s, now = Date.now()) {
+  if (!hasCompletedJourney(s) || s.achievements?.grandExplorer) return false;
+  s.achievements ??= {};
+  s.achievements.grandExplorer = {unlockedAt: now};
+  event(s, "journey_champion_unlocked");
+  return true;
+}
 export function canInterstitial(s) {
   return (
     !s.ads.firstSession &&
@@ -535,10 +584,29 @@ export function canInterstitial(s) {
 export function canReward(s, date) {
   return (s.ads.rewardDays[date] ?? 0) < tuning.rewardCap;
 }
+// Rescue allowance belongs to the puzzle, not to a button or a restarted attempt.
+function rescueScope(a) {
+  return a.mode === "journey" ? `journey:${a.board.id}` : a.mode === "daily" ? `daily:${a.date}` : `${a.mode}:${a.board.seed}`;
+}
+export function rescueCount(s, a = s.active) {
+  if (!a) return 0;
+  return Math.max(s.rescueUses?.[rescueScope(a)] || 0, (a.help || []).filter(h => h.kind === "rescue").length);
+}
 export function reduce(state, action) {
   let s = JSON.parse(JSON.stringify(state)),
     a = s.active;
   switch (action.type) {
+    case "MISSION_CLAIM": {
+      const mission=missions(s,action.date).find(m=>m.id===action.id);
+      if(!mission?.ready||mission.claimed)return state;
+      award(s,`mission:${mission.period}:${mission.id}`,mission.coins);
+      event(s,"mission_claimed",{id:mission.id,coins:mission.coins});
+      break;
+    }
+
+    case "CHAMPION_UNLOCK":
+      if (!unlockChampion(s)) return state;
+      break;
     case "PODIUM_AWARD": {
       const receipt = action.receipt;
       if (!validPodiumReceipt(receipt, action.playerId, action.now)) return state;
@@ -615,14 +683,25 @@ export function reduce(state, action) {
       )
         return state;
       if (mode === "ranked" && (typeof action.ranked?.attemptId !== "string" || !action.ranked.attemptId || action.ranked.attemptId.length > 128)) return state;
+      if (mode === "expedition") {
+        const week=weekKey(date), progress=s.expeditions?.[week]?.completed||[];
+        if(!week||!prefixComplete(s,10)||action.activity?.week!==week||action.activity?.index!==progress.length||progress.length>=5)return state;
+      }
+      if(mode === "beyond" && (!prefixComplete(s,300)||action.activity?.index!==(s.beyond?.completed||0)))return state;
       let duration = Math.max(
         90,
         Math.min(600, Math.round(b.profile.timeMedian * 1.6)),
       );
+      // Carry legacy active-puzzle rescues into durable per-puzzle accounting.
+      if (a && rescueCount(s, a)) {
+        s.rescueUses ??= {};
+        s.rescueUses[rescueScope(a)] = rescueCount(s, a);
+      }
       s.practiceCounter++;
       s.active = {
         board: b,
         mode,
+        ...(action.activity ? {activity:action.activity} : {}),
         date,
         instance: `${mode}:${b.seed}:${s.practiceCounter}`,
         found: [],
@@ -682,6 +761,7 @@ export function reduce(state, action) {
         a.found.push(target.word);
         a.score += tuning.targetPoints;
         a.lastFoundAt = a.elapsed;
+        a.missesSinceFound = 0;
         event(s, "target_found", { word: target.word, seconds: a.elapsed });
       } else {
         if (a.mode === "ranked") return state;
@@ -692,8 +772,12 @@ export function reduce(state, action) {
           word.length > 8 ||
           a.board.targets.some((t) => t.word === word) ||
           a.bonuses.includes(word)
-        )
-          return state;
+        ) {
+          if(path.length<3 || a.bonuses.includes(word))return state;
+          a.missesSinceFound=(a.missesSinceFound||0)+1;
+          event(s,"selection_miss",{id:a.board.id,seconds:a.elapsed});
+          break;
+        }
         a.bonuses.push(word);
         a.score += tuning.bonusPoints;
         if (!s.notebook.includes(word)) s.notebook.push(word);
@@ -703,7 +787,7 @@ export function reduce(state, action) {
               ? `journey:${a.board.id}`
               : a.mode === "daily"
                 ? `daily:${a.date}`
-                : a.instance,
+                : ["expedition","beyond"].includes(a.mode) ? `${a.mode}:${a.board.seed}` : a.instance,
           paidBonusCount = Object.keys(s.ledger).filter((k) =>
             k.startsWith(`bonus:${rewardScope}:`),
           ).length,
@@ -727,6 +811,7 @@ export function reduce(state, action) {
             s.practiceBonus[date] =
               (s.practiceBonus[date] ?? 0) + tuning.bonusCoins;
         }
+        recordActivity(s, action.date, `bonus:${a.mode}:${a.board.seed}:${word}`, {bonus:1});
         event(s, "bonus_found", { word });
       }
       break;
@@ -743,7 +828,23 @@ export function reduce(state, action) {
         else a.freeReadyAt = a.elapsed + tuning.nudgeRecharge;
       } else if (action.kind === "trace") cost = tuning.traceCost;
       else if (action.kind !== "rescue") return state;
+      if (action.kind === "rescue" && rescueCount(s,a) > 0) {
+        if (action.instance !== a.instance) return state;
+        if (action.payment === "coins") {
+          if (action.impression || typeof action.id !== "string" || !action.id) return state;
+          cost = tuning.rescueCost;
+        } else {
+          // Only the SDK earned-reward callback may supply a fresh receipt.
+          if (typeof action.impression !== "string" || !action.impression || s.ledger["ad:" + action.impression]) return state;
+        }
+      } else if (action.kind === "rescue" && (action.impression || action.payment)) return state;
       if (s.coins < cost) return state;
+      if (action.kind === "rescue") {
+        const used = rescueCount(s,a);
+        if (used > 0 && action.payment !== "coins") s.ledger["ad:" + action.impression] = true;
+        s.rescueUses ??= {};
+        s.rescueUses[rescueScope(a)] = used + 1;
+      }
       if (action.id) s.ledger["help:" + action.id] = true;
       s.coins -= cost;
       a.help.push({ kind: action.kind, word: target.word, elapsed: a.elapsed });
@@ -798,6 +899,22 @@ export function reduce(state, action) {
         s.dailyRewards.push(a.date);
         a.coinReward += tuning.dailyCoins;
       }
+      if(a.mode === "expedition") {
+        const {week,index}=a.activity||{};
+        if(week && Number.isInteger(index)) {
+          s.expeditions??={};s.expeditions[week]??={completed:[],keepsake:false};
+          const progress=s.expeditions[week];
+          if(!progress.completed.includes(index))progress.completed.push(index);
+          if(progress.completed.length===5){progress.keepsake=true;if(award(s,`expedition:${week}`,60))a.coinReward+=60;}
+        }
+      }
+      if(a.mode === "beyond" && a.activity?.index===(s.beyond?.completed||0)) {
+        s.beyond??={completed:0};
+        if(award(s,`beyond:${a.activity.index}`,10)){s.beyond.completed++;a.coinReward+=10;}
+      }
+      const activityScope=a.mode==="journey" ? `journey:${a.board.id}` : a.mode==="daily" ? `daily:${a.date}` : `${a.mode}:${a.board.seed}`;
+      recordActivity(s,action.date,`complete:${activityScope}`,{puzzles:1,independent:a.help.length?0:1});
+      if (a.mode === "journey") unlockChampion(s);
       event(s, "completion", {
         id: a.board.id,
         mode: a.mode,
@@ -820,6 +937,8 @@ export function reduce(state, action) {
           if (!s.palettes.includes(action.value)) return state;
         } else if (action.key === "grid") {
           if (!["light", "heavy", "none"].includes(action.value)) return state;
+        } else if (action.key === "volume") {
+          if (!Number.isFinite(action.value) || action.value < 0 || action.value > 1) return state;
         } else if (typeof action.value !== "boolean") return state;
         s.settings[action.key] = action.value;
       }
