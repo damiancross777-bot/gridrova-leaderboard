@@ -1,0 +1,5 @@
+24a873558accb11fa7bc6b3e5e3fe1aa9b004ef3cabbe57ea2f52cf505ab30da  src/game/core.mjs
+d14f5d036fe75a20daaa45e01832dc0e576aa84ad09e72f89e412f9a6167bdc6  src/game/fallbacks.json
+5000e0291111256d3555669c2566e6a2823818cf37dd6ae3a0e5e8091d3bf2ec  src/game/leaderboard.mjs
+5962112c3db5a6c0dc012f0968389672a369e3ffc4b335622bd23130f2e53c2f  src/game/vocabulary-expansion.mjs
+0730e460cf83488c5ce438636a681588e371aa414d7b29d621ade9c63368455d  src/game/vocabulary.mjs

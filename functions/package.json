@@ -1,0 +1,27 @@
+{
+  "name": "gridrova-leaderboard-functions",
+  "version": "1.0.0",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc && node scripts/copy-game.mjs",
+    "test": "npm run build && node --test test/unit.test.mjs",
+    "test:emulators": "npm run build && firebase emulators:exec --only auth,firestore --project demo-gridrova \"node --test --test-concurrency=1 test/integration.test.mjs\"",
+    "serve": "npm run build && firebase emulators:start --only functions,auth,firestore --project demo-gridrova",
+    "deploy": "firebase deploy --only functions,firestore"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.2",
+    "firebase-tools": "^15.34.0",
+    "typescript": "^5.9.3"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24"
+  }
+}

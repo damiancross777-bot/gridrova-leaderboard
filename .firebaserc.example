@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "staging": "gridrova-lb-staging",
+    "production": "gridrova-lb-prod"
+  }
+}
