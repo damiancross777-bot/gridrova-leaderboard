@@ -1,7 +1,7 @@
 // Private cloud save — an UNTRUSTED backup of the player's local game, nothing more.
 // Never copy its coins, levels, receipts or trophies into wallet, ranked or Champions data.
 import { FieldValue } from "firebase-admin/firestore";
-import { db } from "./db.js";
+import { db, auth } from "./db.js";
 import { fail, ApiError } from "./errors.js";
 import { readBackup } from "./game/backup.mjs";
 import type { Flags } from "./flags.js";
@@ -60,4 +60,24 @@ export async function deleteSave(caller: Caller, flags: Flags) {
 
 export async function deleteSaveForUid(uid: string) {
   await saveRef(uid).delete();
+}
+
+/** Deletes saves owned by UIDs that no longer exist in Firebase Auth. Pages 100 at a time. */
+export async function purgeOrphanSaves(): Promise<number> {
+  let removed = 0;
+  let last: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+  for (;;) {
+    let q = db.collection("privateGameSaves").orderBy("__name__").limit(100);
+    if (last) q = q.startAfter(last);
+    const page = await q.get();
+    if (page.empty) return removed;
+    const result = await auth().getUsers(page.docs.map((d) => ({ uid: d.id })));
+    for (const missing of result.notFound) {
+      if ("uid" in missing) {
+        await saveRef(missing.uid).delete();
+        removed++;
+      }
+    }
+    last = page.docs[page.docs.length - 1];
+  }
 }
