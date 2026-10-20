@@ -1,0 +1,12 @@
+// GridRova leaderboard — dedicated Firebase projects (staging + production).
+// Clients never read or write Firestore directly. Every read/write goes through the HTTPS
+// API, which uses the Admin SDK with the function's least-privilege runtime identity.
+// If this ever shares a project with another app, MERGE instead of replacing.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
