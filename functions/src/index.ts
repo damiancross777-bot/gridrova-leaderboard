@@ -4,8 +4,7 @@ import { defineSecret, defineString } from "firebase-functions/params";
 import { REGION } from "./config.js";
 import { handle } from "./api.js";
 import { settleDue } from "./settlement.js";
-import { deleteSaveForUid } from "./saves.js";
-import * as functionsV1 from "firebase-functions/v1";
+import { purgeOrphanSaves } from "./saves.js";
 
 // Non-secret, per-project value set in functions/.env.<projectId> (committed examples only).
 const ALLOWED_ORIGINS = defineString("ALLOWED_ORIGINS", {
@@ -48,11 +47,19 @@ export const settleDaily = onSchedule(
   },
 );
 
-// Account deletion removes the private cloud save. Receipts, ledgers and settlements are kept
-// as the prize audit trail (they hold no personal data beyond the UID).
-export const deleteAccountData = functionsV1
-  .region(REGION)
-  .auth.user()
-  .onDelete(async (user) => {
-    await deleteSaveForUid(user.uid);
-  });
+// Removes private cloud saves whose Firebase account no longer exists. (1st-gen auth onDelete
+// triggers don't support Node 24 and 2nd gen has no equivalent, so this runs weekly instead.)
+// Receipts, ledgers and settlements are kept as the prize audit trail.
+export const purgeDeletedAccountSaves = onSchedule(
+  {
+    region: REGION,
+    schedule: "30 1 * * 1",
+    timeZone: "Etc/UTC",
+    retryCount: 1,
+    maxInstances: 1,
+    timeoutSeconds: 540,
+  },
+  async () => {
+    await purgeOrphanSaves();
+  },
+);

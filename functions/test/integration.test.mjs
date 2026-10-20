@@ -9,6 +9,7 @@ import { setClockForTests } from "../lib/time.js";
 import { clearFlagCacheForTests } from "../lib/flags.js";
 import { settleDate, settleDue } from "../lib/settlement.js";
 import { clearRankCacheForTests } from "../lib/competition.js";
+import { purgeOrphanSaves } from "../lib/saves.js";
 import { pack } from "../lib/game/storage.mjs";
 import { initialState } from "../lib/game/core.mjs";
 import { readFileSync } from "node:fs";
@@ -644,4 +645,14 @@ test("malformed and oversized saves are rejected; delete removes the copy", asyn
   await savePut(a, { snapshot: snapshot(), expectedVersion: 0 });
   assert.equal((await call("DELETE", "/v1/me/save", { token: a.token })).body.deleted, true);
   assert.equal((await saveGet(a)).body.version, 0);
+});
+
+test("the weekly clean-up removes saves of deleted accounts and keeps everyone else's", async () => {
+  const [a, b] = [await linkedPlayer(), await linkedPlayer()];
+  await savePut(a, { snapshot: snapshot(1), expectedVersion: 0 });
+  await savePut(b, { snapshot: snapshot(2), expectedVersion: 0 });
+  await getAuth().deleteUser(a.uid);
+  assert.equal(await purgeOrphanSaves(), 1);
+  assert.equal((await db.doc(`privateGameSaves/${a.uid}`).get()).exists, false);
+  assert.equal((await db.doc(`privateGameSaves/${b.uid}`).get()).exists, true);
 });
