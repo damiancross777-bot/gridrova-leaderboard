@@ -102,6 +102,18 @@ A player's rank is three COUNT aggregations: Firestore bills about 1 read per 1,
 - **Anonymous identities** can be recreated freely until Google linking is required.
 - **Level 10 eligibility** is checked only by the app. It is a UX gate, not an anti-abuse control.
 
+## Server identity (least privilege)
+
+All functions run as `gridrova-api@<projectId>.iam.gserviceaccount.com`, not the default compute account (which has Editor on the whole project). Create it once per project **before** deploying (Google Cloud → IAM & Admin → Service accounts → Create), with only these roles:
+
+| Role | Why |
+|---|---|
+| Cloud Datastore User | Read/write game data in Firestore |
+| Firebase Authentication Viewer | Verify sign-in tokens, check revoked/disabled accounts |
+| Secret Manager Secret Accessor | Read `CHALLENGE_SALT` |
+| Logs Writer | Write function logs |
+| Cloud Run Invoker | Lets Cloud Scheduler trigger the scheduled jobs |
+
 ## Rollback
 
 1. Set `config/leaderboard.rankedStartsEnabled = false`. This stops new attempts. Reads, finalized history and prize claims keep working.

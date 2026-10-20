@@ -12,10 +12,14 @@ const ALLOWED_ORIGINS = defineString("ALLOWED_ORIGINS", {
 });
 // Stored in Google Secret Manager; never in Git, Pages or EXPO_PUBLIC variables.
 const CHALLENGE_SALT = defineSecret("CHALLENGE_SALT");
+// Dedicated least-privilege runtime identity (created per project; see README "Server identity").
+// "gridrova-api@" expands to gridrova-api@<projectId>.iam.gserviceaccount.com.
+const RUNTIME_SA = "gridrova-api@";
 
 export const api = onRequest(
   {
     region: REGION,
+    serviceAccount: RUNTIME_SA,
     secrets: [CHALLENGE_SALT],
     maxInstances: 10,
     concurrency: 80,
@@ -36,6 +40,7 @@ export const api = onRequest(
 export const settleDaily = onSchedule(
   {
     region: REGION,
+    serviceAccount: RUNTIME_SA,
     schedule: "5 0 * * *",
     timeZone: "Etc/UTC",
     retryCount: 3,
@@ -53,6 +58,7 @@ export const settleDaily = onSchedule(
 export const purgeDeletedAccountSaves = onSchedule(
   {
     region: REGION,
+    serviceAccount: RUNTIME_SA,
     schedule: "30 1 * * 1",
     timeZone: "Etc/UTC",
     retryCount: 1,
