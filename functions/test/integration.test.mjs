@@ -4,7 +4,7 @@ import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { getAuth } from "firebase-admin/auth";
 import { db } from "../lib/db.js";
-import { handle } from "../lib/api.js";
+import { handle, clearPublicCacheForTests } from "../lib/api.js";
 import { setClockForTests } from "../lib/time.js";
 import { clearFlagCacheForTests } from "../lib/flags.js";
 import { settleDate, settleDue } from "../lib/settlement.js";
@@ -32,6 +32,7 @@ beforeEach(async () => {
   await fetch(`http://${FS_HOST}/emulator/v1/projects/${PROJECT}/databases/(default)/documents`, { method: "DELETE" });
   await fetch(`http://${AUTH_HOST}/emulator/v1/projects/${PROJECT}/accounts`, { method: "DELETE" });
   clock = T("2026-10-20T10:00:00Z");
+  clearPublicCacheForTests();
   await setFlags({});
 });
 

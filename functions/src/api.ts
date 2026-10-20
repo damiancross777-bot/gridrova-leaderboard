@@ -18,6 +18,9 @@ export interface Deps {
 }
 
 const publicCache = new Map<string, { at: number; ttl: number; body: unknown }>();
+export function clearPublicCacheForTests(): void {
+  publicCache.clear();
+}
 
 function send(res: Response, status: number, body: unknown, cache = "private, no-store") {
   res.set("Cache-Control", cache);
@@ -53,7 +56,7 @@ export async function handle(req: Request, res: Response, deps: Deps): Promise<v
       limitPublic(req.ip ?? "unknown", LIMITS.publicRead);
       const date = parseBoardDate(req.query.date);
       const hit = publicCache.get(date);
-      if (hit && now() - hit.at < hit.ttl) {
+      if (hit && now() >= hit.at && now() - hit.at < hit.ttl) {
         send(res, 200, hit.body, (hit.body as any).finalized ? "public, max-age=3600" : "public, max-age=30");
         return;
       }
