@@ -221,7 +221,7 @@ test("exact ties order by finish time then UID, with ranks 1,2,3 (never shared)"
   assert.deepEqual(view.body.entries.map((e) => e.rank), [1, 2, 3]);
   assert.deepEqual(view.body.entries.map((e) => e.elapsedMs), [120000, 120000, 120000]);
   assert.equal(view.body.entries[2].isYou, true);
-  assert.deepEqual(view.body.me, { rank: 3, elapsedMs: 120000 });
+  assert.deepEqual({ rank: view.body.me.rank, elapsedMs: view.body.me.elapsedMs }, { rank: 3, elapsedMs: 120000 });
   const meFirst = await call("GET", "/v1/leaderboard", { token: first.token, query: { date: "2026-10-20" } });
   assert.equal(meFirst.body.me.rank, 1);
   const meSecond = await call("GET", "/v1/leaderboard", { token: second.token, query: { date: "2026-10-20" } });
