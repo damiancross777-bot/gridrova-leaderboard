@@ -4,6 +4,7 @@ import { db, paths } from "./db.js";
 import { now, utcDay, addDays } from "./time.js";
 import { RULES, LIMITS, SETTLEMENT_LEASE_MS, SETTLEMENT_LOOKBACK_DAYS, EARLIEST_DATE } from "./config.js";
 import { logger } from "firebase-functions";
+import { isDeleted } from "./deletion.js";
 
 type Winner = { uid: string; rank: number; elapsedMs: number; displayName: string };
 export type SettleResult = "not-closed" | "already-complete" | "leased-elsewhere" | "complete";
@@ -87,6 +88,7 @@ export async function settleDate(date: string, hooks: SettleHooks = {}): Promise
     if (snap.get("leaseId") !== leaseId) return "leased-elsewhere" as const;
     if (lease.prizesEnabled) {
       for (const w of lease.winners) {
+        if (await isDeleted(tx, w.uid)) continue;
         const award = await tx.get(paths.award(w.uid, date));
         if (!award.exists) throw new Error(`Missing receipt for ${date} rank ${w.rank}`);
       }
@@ -109,6 +111,8 @@ async function payWinner(date: string, w: Winner, coins: number) {
   const txId = `prize_daily_${date}`;
   const ledgerRef = paths.ledgerTx(w.uid, txId);
   await db.runTransaction(async (tx) => {
+    // A player who deleted their online data is never paid (their place stays, the prize lapses).
+    if (await isDeleted(tx, w.uid)) return;
     const [award, player, ledger] = await Promise.all([tx.get(awardRef), tx.get(playerRef), tx.get(ledgerRef)]);
     if (award.exists) return;
     if (ledger.exists) throw new Error("Ledger entry without award: manual review required");

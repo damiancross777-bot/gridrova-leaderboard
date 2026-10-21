@@ -656,3 +656,54 @@ test("the weekly clean-up removes saves of deleted accounts and keeps everyone e
   assert.equal((await db.doc(`privateGameSaves/${a.uid}`).get()).exists, false);
   assert.equal((await db.doc(`privateGameSaves/${b.uid}`).get()).exists, true);
 });
+
+// ================================================================ delete my online data
+test("deleting online data removes the player everywhere, keeps ranks, and their prize lapses", async () => {
+  const ps = await setupEntrants(3);
+  // Rank 1 also recorded a journey level.
+  const j = (await jStart(ps[0], 5)).body;
+  clock += 60_000;
+  await jFinish(ps[0], j.attemptId, 5);
+  // Rank 1 deletes BEFORE settlement: no prize, others still paid, settlement completes.
+  const del = await call("DELETE", "/v1/me", { token: ps[0].token });
+  assert.equal(del.body.deleted, true);
+  assert.equal((await db.doc(`players/${ps[0].uid}`).get()).exists, false);
+  assert.equal((await db.doc(`journeyProgress/${ps[0].uid}`).get()).exists, false);
+  assert.equal((await db.collection("attempts").where("uid", "==", ps[0].uid).get()).size, 0);
+  assert.equal((await db.collection("journeyAttempts").where("uid", "==", ps[0].uid).get()).size, 0);
+  assert.equal((await db.doc(`standings/2026-10-20/entries/${ps[0].uid}`).get()).exists, false);
+  assert.equal(code(await start(ps[0])), "UNAUTHENTICATED", "deleted account's token no longer works");
+  clock = T("2026-10-21T00:05:00Z");
+  assert.equal(await settleDate("2026-10-20"), "complete");
+  assert.equal((await awardsFor(ps[1].uid))[0].rank, 1, "next player moves up");
+  assert.equal((await awardsFor(ps[0].uid)).length, 0);
+});
+
+test("deleting after settlement redacts final standings and is never re-paid", async () => {
+  const ps = await setupEntrants(3);
+  clock = T("2026-10-21T00:05:00Z");
+  await settleDate("2026-10-20");
+  await call("DELETE", "/v1/me", { token: ps[1].token });
+  const s = (await db.doc("settlements/2026-10-20").get()).data();
+  assert.ok(!JSON.stringify(s).includes(ps[1].uid), "UID removed from settlement");
+  assert.equal(s.finalStandings[1].displayName, "Deleted player");
+  assert.equal(s.finalStandings[1].rank, 2, "ranks unchanged");
+  const pub = await call("GET", "/v1/public/leaderboard", { query: { date: "2026-10-20" } });
+  assert.deepEqual(pub.body.entries.map((e) => e.displayName)[1], "Deleted player");
+  assert.equal((await db.collection("players/deleted/awards").get()).size, 0);
+  await settleDue();
+  assert.equal((await db.collection("players/deleted/awards").get()).size, 0, "no payout to the placeholder");
+  assert.equal((await awardsFor(ps[0].uid)).length, 1, "other winners untouched");
+});
+
+test("a deletion during an interrupted settlement stops that payout but the settlement still completes", async () => {
+  const ps = await setupEntrants(3);
+  clock = T("2026-10-21T00:05:00Z");
+  let paid = 0;
+  await assert.rejects(settleDate("2026-10-20", { afterWinnerPaid: () => { if (++paid === 1) throw new Error("crash"); } }));
+  await call("DELETE", "/v1/me", { token: ps[2].token }); // rank 3 deletes while settlement is unfinished
+  clock += 6 * 60_000;
+  assert.equal(await settleDate("2026-10-20"), "complete");
+  assert.equal((await awardsFor(ps[2].uid)).length, 0);
+  assert.equal((await awardsFor(ps[1].uid)).length, 1);
+});

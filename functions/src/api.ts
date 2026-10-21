@@ -10,6 +10,7 @@ import { limitPlayer, limitPublic } from "./ratelimit.js";
 import { startAttempt, finishAttempt, parseBoardDate, boardView, rankOf, nearby } from "./competition.js";
 import { startJourney, finishJourney, journeyProgress, championsPage } from "./journey.js";
 import { getSave, putSave, deleteSave } from "./saves.js";
+import { deleteMyData } from "./deletion.js";
 import { claimAwards } from "./claims.js";
 
 export interface Deps {
@@ -141,6 +142,13 @@ export async function handle(req: Request, res: Response, deps: Deps): Promise<v
       if (req.method !== "GET") fail("METHOD_NOT_ALLOWED");
       await limitPlayer(caller.uid, "read", LIMITS.privateRead);
       send(res, 200, await championsPage(req.query.cursor, deps.challengeSalt));
+      return;
+    }
+    // ---- Delete my online data (always available, any identity) -------------------------
+    if (path === "/v1/me") {
+      if (req.method !== "DELETE") fail("METHOD_NOT_ALLOWED");
+      await limitPlayer(caller.uid, "delete", { windowSec: 60, max: 3 });
+      send(res, 200, await deleteMyData(caller));
       return;
     }
     // ---- Private cloud save (linked accounts only) ---------------------------------------
