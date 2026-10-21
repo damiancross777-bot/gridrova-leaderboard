@@ -37,3 +37,41 @@ jobs:
           summary=$( { grep -E "^(ℹ )(tests|pass|fail)|^✔|^✖" emulator-tests.log; sed -n '/failing tests:/,$p' emulator-tests.log | head -150; } | head -260)
           summary="${summary//'%'/'%25'}"; summary="${summary//$'\n'/'%0A'}"
           echo "::notice title=Emulator test summary::${summary}"
+
+  staging-script-selftest:
+    # Runs scripts/staging-acceptance.mjs against the full local emulator stack (functions included)
+    # so the live staging run is known to work before anyone points it at staging.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+        working-directory: functions
+      - run: npm install -g firebase-tools@15.34.0
+      - name: Emulator-only function settings (not secrets)
+        run: |
+          echo "CHALLENGE_SALT=ci-emulator-only-salt-0123456789" > functions/.secret.local
+          echo "ALLOWED_ORIGINS=https://damiancross777-bot.github.io" > functions/.env.local
+      - name: Build
+        run: npm run build
+        working-directory: functions
+      - name: Acceptance script against emulators
+        run: |
+          set -o pipefail
+          firebase emulators:exec --only auth,firestore,functions --project demo-gridrova \
+            "node functions/scripts/seed-emulator-config.mjs && node scripts/staging-acceptance.mjs --emulator --base http://127.0.0.1:5001/demo-gridrova/australia-southeast1/api --api-key fake-api-key --out reports/selftest.json" 2>&1 | tee selftest.log
+      - name: Report self-test results as annotation
+        if: always()
+        run: |
+          [ -f selftest.log ] || exit 0
+          summary=$(grep -E "^(PASS|FAIL) |passed, .* failed|Error" selftest.log | head -60)
+          summary="${summary//'%'/'%25'}"; summary="${summary//$'\n'/'%0A'}"
+          echo "::notice title=Staging script self-test::${summary}"
