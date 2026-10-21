@@ -172,7 +172,11 @@ export async function handle(req: Request, res: Response, deps: Deps): Promise<v
       return;
     }
     // Log the message only: never request bodies, headers or tokens.
-    logger.error("unhandled", { message: (e as Error)?.message });
+    // The message goes in the log line itself: Cloud Run's error capture keeps only the text, so the
+    // structured field alone was lost (seen on staging, 22 Oct 2026). Firestore errors such as a missing
+    // index carry their gRPC code and a console link in the message, which is what we need to see.
+    const err = e as { message?: string; code?: unknown };
+    logger.error(`unhandled ${req.method} ${req.path}: ${String(err?.message ?? e).slice(0, 1500)}`, { code: err?.code ?? null });
     send(res, 500, { error: { code: "INTERNAL" } });
   }
 }
