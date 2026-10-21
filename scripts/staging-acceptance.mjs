@@ -97,6 +97,7 @@ await check("C5", "Ranked start returns today's board that the app's own validat
   ok(validateBoard(r.json.board).length === 0, "board failed the game's validateBoard (content version mismatch?)");
   ok(!String(r.json.board.seed).startsWith("fallback:"), "ranked board is a bundled fallback");
   attemptA = r.json; boardA = r.json.board;
+  attemptA.receivedAtLocal = Date.now(); // server start time is before this moment, whatever this PC's clock says
   return { seedPrefix: String(boardA.seed).split(":").slice(0, 2).join(":"), contentVersion: boardA.contentVersion, closesAt: r.json.closesAt };
 });
 await check("C6", "Repeated and concurrent starts return the same attempt and original start time", async () => {
@@ -120,18 +121,21 @@ await check("C9", "Another player cannot submit this attempt", async () => {
 });
 if (SLOW) {
   await check("C10", "A valid finish after 21 s is accepted with server-measured time; repeat is idempotent", async () => {
-    const wait = Math.max(0, Date.parse(attemptA.startedAt) + 21_500 - Date.now());
+    // Timed from when the start reply arrived on THIS machine, so a fast or slow PC clock can't make the
+    // finish land under the server's 20 s plausibility floor (which would hold the result off the board).
+    const wait = Math.max(0, attemptA.receivedAtLocal + 23_000 - Date.now());
     await sleep(wait);
     const body = { challengeDate: today, seed: boardA.seed, paths: boardA.targets.map((t) => t.path) };
     const f1 = await http("POST", `/v1/attempts/${attemptA.attemptId}/finish`, { token: a.token, body });
     ok(f1.json?.accepted === true && f1.json.attemptId === attemptA.attemptId, `finish: ${f1.status} ${code(f1)}`);
     const f2 = await http("POST", `/v1/attempts/${attemptA.attemptId}/finish`, { token: a.token, body });
     ok(f2.json?.elapsedMs === f1.json.elapsedMs, "repeat changed the result");
+    ok(f1.json.elapsedMs >= 20_000, `server measured ${f1.json.elapsedMs} ms, under the 20 s floor (result held, not ranked)`);
     return { elapsedMs: f1.json.elapsedMs };
   });
   await check("C11", "Leaderboard and nearby show the player; nearby is bounded with one 'you' row", async () => {
     const lb = await http("GET", `/v1/leaderboard?date=${today}`, { token: a.token });
-    ok(lb.json?.me?.rank >= 1, "player not ranked");
+    ok(lb.json?.me?.rank >= 1, `player not ranked: ${lb.status} ${code(lb) ?? ""} me=${JSON.stringify(lb.json?.me)}`);
     const nb = await http("GET", `/v1/leaderboard/nearby?date=${today}&above=5&below=5`, { token: a.token });
     ok(nb.status === 200 && nb.json.status === "ranked" && nb.json.entries.length <= 11 && nb.json.entries.filter((e) => e.isYou).length === 1, `nearby ${nb.status} ${code(nb)}`);
     ok(!JSON.stringify(nb.json).includes(a.uid), "UID leaked in nearby");
