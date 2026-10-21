@@ -6,9 +6,8 @@
 //   node scripts/staging-acceptance.mjs --api-key <staging Web API key>
 // Optional: --base <api base URL>  --out <report.json>  --skip-slow
 //
-// Effects on staging: a few anonymous test players, today's ranked attempt for each (one finished
-// after ~21 s so it appears in today's standings) and one recorded journey level. No production
-// project is ever contacted; the script refuses any base URL that doesn't contain "staging".
+// Effects on staging: two anonymous test players play today's ranked board and one journey level,
+// then delete themselves (check C16), so nothing is left behind. No production project is ever contacted; the script refuses any base URL that doesn't contain "staging".
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -161,6 +160,16 @@ await check("C14", "Prize claim for a brand-new player returns no receipts and m
 await check("C15", "Cloud save is unavailable to anonymous players (1.0 ships without accounts)", async () => {
   const r = await http("GET", "/v1/me/save", { token: b.token });
   ok(["NOT_OPEN", "ACCOUNT_REQUIRED"].includes(code(r)), `got ${r.status} ${code(r)}`);
+});
+
+await check("C16", "Delete my online data removes the test players and invalidates their sign-in", async () => {
+  for (const p of [a, b].filter(Boolean)) {
+    const r = await http("DELETE", "/v1/me", { token: p.token });
+    ok(r.status === 200 && r.json?.deleted === true, `delete ${r.status} ${code(r)}`);
+  }
+  if (a) ok(code(await http("POST", "/v1/attempts/start", { token: a.token, body: {} })) === "UNAUTHENTICATED", "deleted player's token still works");
+  const pub = await http("GET", `/v1/public/leaderboard?date=${today}`);
+  ok(!JSON.stringify(pub.json).includes(a?.uid || "x"), "deleted player still public");
 });
 
 const report = { base: BASE, ranAt: new Date().toISOString(), utcDate: today, passed: results.filter((r) => r.status === "PASS").length, failed: results.filter((r) => r.status === "FAIL").length, results };
