@@ -13,8 +13,12 @@ const ALLOWED_ORIGINS = defineString("ALLOWED_ORIGINS", {
 // Stored in Google Secret Manager; never in Git, Pages or EXPO_PUBLIC variables.
 const CHALLENGE_SALT = defineSecret("CHALLENGE_SALT");
 // Dedicated least-privilege runtime identity (created per project; see README "Server identity").
-// "gridrova-api@" expands to gridrova-api@<projectId>.iam.gserviceaccount.com.
-const RUNTIME_SA = "gridrova-api@";
+// Spelled out in full: the "gridrova-api@" shorthand works for the function itself, but firebase deploy's
+// secret-access step passes it to Secret Manager unexpanded and fails ("Invalid service account").
+// GCLOUD_PROJECT is set by the Firebase CLI (deploy) and the emulators to the target project.
+const PROJECT_ID = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+if (!PROJECT_ID) throw new Error("GCLOUD_PROJECT is not set; cannot name the runtime service account");
+const RUNTIME_SA = `gridrova-api@${PROJECT_ID}.iam.gserviceaccount.com`;
 
 export const api = onRequest(
   {
