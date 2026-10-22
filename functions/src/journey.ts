@@ -1,7 +1,7 @@
 // 300-Level Champions — "Recorded online".
 //
 // What this records: each journey level completed against a server-timed attempt on the exact
-// published board (content version 5), with a complete valid solution, no faster than a minimum
+// published board (the game's current CONTENT_VERSION), with a complete valid solution, no faster than a minimum
 // per-level time, and at most a capped number of new levels per UTC day. Once all 300 distinct
 // levels are recorded, one permanent gallery entry is created with a server timestamp.
 //
@@ -16,17 +16,22 @@ import { FieldValue } from "firebase-admin/firestore";
 import { db } from "./db.js";
 import { fail } from "./errors.js";
 import { now, utcDay } from "./time.js";
-import { checkSolution, parseFinishBody, Board } from "./game.js";
+import { checkSolution, parseFinishBody, Board, gameContentVersion } from "./game.js";
 import { safeDisplayName } from "./alias.js";
 import type { Flags } from "./flags.js";
 import type { Caller } from "./identity.js";
 
-export const JOURNEY_CONTENT_VERSION = 5;
+// Must equal the app's CONTENT_VERSION; the vendored catalogue below is checked against it at startup.
+export const JOURNEY_CONTENT_VERSION = 6;
 export const JOURNEY_LEVELS = 300;
 
 const boards: Board[] = JSON.parse(readFileSync(new URL("./game/levels.json", import.meta.url), "utf8"));
-if (boards.length !== JOURNEY_LEVELS || boards.some((b, i) => b.id !== i + 1 || b.contentVersion !== JOURNEY_CONTENT_VERSION)) {
-  throw new Error("Journey catalogue does not match content version 5");
+if (
+  gameContentVersion !== JOURNEY_CONTENT_VERSION ||
+  boards.length !== JOURNEY_LEVELS ||
+  boards.some((b, i) => b.id !== i + 1 || b.contentVersion !== JOURNEY_CONTENT_VERSION)
+) {
+  throw new Error(`Journey catalogue does not match content version ${JOURNEY_CONTENT_VERSION} (game CONTENT_VERSION ${gameContentVersion})`);
 }
 
 const ref = {

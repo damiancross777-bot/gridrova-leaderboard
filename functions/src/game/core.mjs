@@ -1,7 +1,7 @@
 import {missions,recordActivity,weekKey,prefixComplete} from "./activities.mjs";
 import { validPodiumReceipt, hasCompletedJourney } from "./leaderboard.mjs";
 import { categories, bonusLexicon, banned } from "./vocabulary.mjs";
-export const CONTENT_VERSION = 5;
+export const CONTENT_VERSION = 6;
 export const tuning = {
   startCoins: 100,
   targetPoints: 10,
@@ -16,12 +16,12 @@ export const tuning = {
   nudgeCost: 15,
   traceCost: 40,
   rescueCost: 100,
-  nudgeRecharge: 45,
   completionCoins: 25,
   chapterCoins: 100,
   rewardCoins: 30,
-  adInterval: 180,
-  adLevels: 3,
+  adInterval: 300,
+  adLevels: 5,
+  adLevelsLater: 4,
   adCap: 4,
   rewardCap: 3,
   sessionGap: 1800000,
@@ -77,7 +77,7 @@ export function profile(level) {
     max = 5;
   } else if (level <= 15) {
     size = 6;
-    count = stretch ? 5 : 4;
+    count = stretch ? 5 : ease ? 3 : 4;
     dirs = [0, 1];
     max = 6;
   } else if (level <= 30) {
@@ -115,6 +115,8 @@ export function profile(level) {
     dirs = [0, 1, 2, 3, 4, 5, 6, 7];
     max = 10;
   }
+  // Teach the search through small boards, not prolonged direction restrictions.
+  dirs = level === 1 ? [0,1] : level <= 3 ? [0,1,2,5] : [0,1,2,3,4,5,6,7];
   let columns = size,
     rows = size;
   if (level >= 81 && level <= 120) {
@@ -139,10 +141,10 @@ export function profile(level) {
     max,
     dirs,
     phase,
-    overlap: level <= 5 ? 0.08 : level < 31 ? 0.18 : level < 121 ? 0.26 : 0.36,
+    overlap: level <= 3 ? 0.08 : level < 31 ? 0.18 : level < 121 ? 0.26 : 0.36,
     minDirections: Math.min(dirs.length, level <= 30 ? 3 : level <= 60 ? 4 : 5),
     maxPerDirection: Math.ceil(count * (dirs.length === 1 ? 1 : dirs.length === 2 ? 0.65 : 0.45)),
-    minCrossings: level <= 5 ? 0 : level <= 15 ? 1 : level <= 80 ? 2 : level <= 200 ? 3 : 4,
+    minCrossings: level <= 3 ? 0 : level <= 15 ? 1 : level <= 80 ? 2 : level <= 200 ? 3 : 4,
     fillerSimilarity: level <= 60 ? 0 : level <= 200 ? 0.12 : 0.2,
     familiarity: "familiar-category-and-subtheme",
     timeMedian: level <= 5 ? 45 : level <= 30 ? 85 : level <= 120 ? 150 : 220,
@@ -354,19 +356,8 @@ export function tryGenerate({ id, seed, category, p, words }) {
           if (ok && shared + overlap <= budget)
             choices.push({ path, overlap, d });
         }
-    // First diagonal/reverse teaching levels place exactly one newly introduced direction.
-    let newDirection =
-      id === 6
-        ? 1
-        : id === 16
-          ? 2
-          : id === 31
-            ? 3
-            : id === 41
-              ? 4
-              : id === 51
-                ? 5
-                : null;
+    // One backward diagonal on levels two and three; later levels mix freely.
+    const newDirection = id === 2 || id === 3 ? 5 : null;
     choices = shuffle(choices, r);
     if (index === 0 && newDirection !== null)
       choices = choices.filter((c) => c.d === newDirection);
@@ -514,6 +505,7 @@ export function localDate(time = Date.now()) {
 export function initialState(now = Date.now()) {
   return {
     schema: 1,
+    readabilityVersion: 2,
     revision: 0,
     coins: tuning.startCoins,
     completed: [],
@@ -548,6 +540,7 @@ export function initialState(now = Date.now()) {
       sessionStarted: now,
       lastSeen: now,
       firstSession: true,
+      policyVersion: 1,
       sessionInterstitials: 0,
       newCompletions: 0,
       activeSinceFullscreen: 0,
@@ -572,14 +565,17 @@ function unlockChampion(s, now = Date.now()) {
   event(s, "journey_champion_unlocked");
   return true;
 }
+// Version once so legacy completion counters cannot trigger an immediate ad on update.
+export function upgradeAdPolicy(s) {
+  if (s.ads.policyVersion === 1) return s;
+  return {...s, ads:{...s.ads, policyVersion:1,newCompletions:0,activeSinceFullscreen:0}};
+}
 export function canInterstitial(s) {
-  return (
-    !s.ads.firstSession &&
-    s.completed.length >= 10 &&
-    s.ads.newCompletions >= tuning.adLevels &&
+  const a=s.active;
+  return !!(a?.mode === "journey" && a.completed && a.board.id > 10 && a.board.id < 300 &&
+    s.ads.newCompletions >= (a.board.id > 100 ? tuning.adLevelsLater : tuning.adLevels) &&
     s.ads.activeSinceFullscreen >= tuning.adInterval &&
-    s.ads.sessionInterstitials < tuning.adCap
-  );
+    s.ads.sessionInterstitials < tuning.adCap);
 }
 export function canReward(s, date) {
   return (s.ads.rewardDays[date] ?? 0) < tuning.rewardCap;
@@ -591,6 +587,18 @@ function rescueScope(a) {
 export function rescueCount(s, a = s.active) {
   if (!a) return 0;
   return Math.max(s.rescueUses?.[rescueScope(a)] || 0, (a.help || []).filter(h => h.kind === "rescue").length);
+}
+// Prices follow the puzzle tier, not the player's wallet or ad behaviour.
+export function helpPrices(a) {
+ const level = a?.mode === "journey" ? Number(a.board?.id) || 1 : 1;
+ const tier = level <= 40 ? 0 : level <= 80 ? 1 : level <= 120 ? 2 : level <= 160 ? 3 : level <= 200 ? 4 : 5;
+ return {nudge:15+tier*5, trace:40+tier*10, rescue:100+tier*20};
+}
+// One free nudge OR rescue for a puzzle, never recharged by time or restart.
+export function freeHelpUsed(s, a = s.active) {
+  if (!a) return false;
+  return !!s.freeHelpUses?.[rescueScope(a)] || rescueCount(s,a) > 0 ||
+    (a.help || []).some(h => h.kind === "nudge" || h.kind === "rescue");
 }
 export function reduce(state, action) {
   let s = JSON.parse(JSON.stringify(state)),
@@ -607,9 +615,43 @@ export function reduce(state, action) {
     case "CHAMPION_UNLOCK":
       if (!unlockChampion(s)) return state;
       break;
+    case "ONLINE_BIND": {
+      // First online use binds this save to one online identity. A different UID is ignored here;
+      // changing accounts needs the explicit ONLINE_SWITCH below.
+      if (typeof action.uid !== "string" || !action.uid || action.uid.length > 128 || s.online?.uid) return state;
+      s.online = { uid: action.uid, boundAt: Date.now() };
+      break;
+    }
+    case "ONLINE_SWITCH": {
+      if (typeof action.uid !== "string" || !action.uid || action.uid.length > 128 || s.online?.uid === action.uid) return state;
+      // Earlier receipts stay as this device's history, but no new prize for another UID is accepted,
+      // and queued journey recordings (owned by the old UID) are discarded.
+      s.online = { uid: action.uid, boundAt: Date.now(), previous: [...(s.online?.previous || []), ...(s.online?.uid ? [s.online.uid] : [])].slice(-10) };
+      s.journeyQueue = [];
+      s.journeyRecorded = [];
+      event(s, "online_account_switched");
+      break;
+    }
+    case "JOURNEY_BIND": {
+      if (!a || a.mode !== "journey" || a.completed || action.seed !== a.board.seed || a.journeyAttempt || typeof action.attemptId !== "string" || !action.attemptId || action.attemptId.length > 128) return state;
+      a.journeyAttempt = action.attemptId;
+      break;
+    }
+    case "JOURNEY_RECORDED": {
+      if (!Number.isInteger(action.level) || action.level < 1 || action.level > 300) return state;
+      s.journeyRecorded = [...new Set([...(s.journeyRecorded || []), action.level])].sort((x, y) => x - y);
+      s.journeyQueue = (s.journeyQueue || []).filter((q) => q.level !== action.level);
+      break;
+    }
+    case "JOURNEY_DROP": {
+      if (!(s.journeyQueue || []).some((q) => q.level === action.level)) return state;
+      s.journeyQueue = s.journeyQueue.filter((q) => q.level !== action.level);
+      break;
+    }
     case "PODIUM_AWARD": {
       const receipt = action.receipt;
       if (!validPodiumReceipt(receipt, action.playerId, action.now)) return state;
+      if (s.online?.uid && action.playerId !== s.online.uid) return state;
       const key = "podium:" + receipt.date;
       if (s.ledger[key]) return state;
       s.podium ??= { receipts: {} };
@@ -697,6 +739,10 @@ export function reduce(state, action) {
         s.rescueUses ??= {};
         s.rescueUses[rescueScope(a)] = rescueCount(s, a);
       }
+      if (a && freeHelpUsed(s,a)) {
+        s.freeHelpUses ??= {};
+        s.freeHelpUses[rescueScope(a)] = true;
+      }
       s.practiceCounter++;
       s.active = {
         board: b,
@@ -708,7 +754,6 @@ export function reduce(state, action) {
         bonuses: [],
         score: 0,
         elapsed: 0,
-        freeReadyAt: 0,
         lastFoundAt: 0,
         stalledShown: false,
         help: [],
@@ -822,17 +867,17 @@ export function reduce(state, action) {
       if (action.id && s.ledger["help:" + action.id]) return state;
       let target = a.board.targets.find((t) => !a.found.includes(t.word));
       if (!target) return state;
+      const usedFree = freeHelpUsed(s,a);
       let cost = 0;
       if (action.kind === "nudge") {
-        if (a.elapsed < a.freeReadyAt) cost = tuning.nudgeCost;
-        else a.freeReadyAt = a.elapsed + tuning.nudgeRecharge;
-      } else if (action.kind === "trace") cost = tuning.traceCost;
+        if (usedFree) cost = helpPrices(a).nudge;
+      } else if (action.kind === "trace") cost = helpPrices(a).trace;
       else if (action.kind !== "rescue") return state;
-      if (action.kind === "rescue" && rescueCount(s,a) > 0) {
+      if (action.kind === "rescue" && usedFree) {
         if (action.instance !== a.instance) return state;
         if (action.payment === "coins") {
           if (action.impression || typeof action.id !== "string" || !action.id) return state;
-          cost = tuning.rescueCost;
+          cost = helpPrices(a).rescue;
         } else {
           // Only the SDK earned-reward callback may supply a fresh receipt.
           if (typeof action.impression !== "string" || !action.impression || s.ledger["ad:" + action.impression]) return state;
@@ -841,9 +886,13 @@ export function reduce(state, action) {
       if (s.coins < cost) return state;
       if (action.kind === "rescue") {
         const used = rescueCount(s,a);
-        if (used > 0 && action.payment !== "coins") s.ledger["ad:" + action.impression] = true;
+        if (usedFree && action.payment !== "coins") s.ledger["ad:" + action.impression] = true;
         s.rescueUses ??= {};
         s.rescueUses[rescueScope(a)] = used + 1;
+      }
+      if (action.kind === "nudge" || action.kind === "rescue") {
+        s.freeHelpUses ??= {};
+        s.freeHelpUses[rescueScope(a)] = true;
       }
       if (action.id) s.ledger["help:" + action.id] = true;
       s.coins -= cost;
@@ -878,7 +927,7 @@ export function reduce(state, action) {
           a.coinReward += tuning.completionCoins;
           s.completed.push(id);
           s.completed.sort((x, y) => x - y);
-          s.ads.newCompletions++;
+          if (id > 10) s.ads.newCompletions++;
           if (id % 20 === 0 && award(s, "chapter:" + id, tuning.chapterCoins)) {
             a.coinReward += tuning.chapterCoins;
             s.palettes.push(id / 20);
@@ -915,6 +964,19 @@ export function reduce(state, action) {
       const activityScope=a.mode==="journey" ? `journey:${a.board.id}` : a.mode==="daily" ? `daily:${a.date}` : `${a.mode}:${a.board.seed}`;
       recordActivity(s,action.date,`complete:${activityScope}`,{puzzles:1,independent:a.help.length?0:1});
       if (a.mode === "journey") unlockChampion(s);
+      // Queue the finished level for "Recorded online" if a server-timed attempt was opened.
+      if (a.mode === "journey" && a.journeyAttempt && !(s.journeyRecorded || []).includes(a.board.id)) {
+        s.journeyQueue = [
+          ...(s.journeyQueue || []).filter((q) => q.level !== a.board.id),
+          {
+            level: a.board.id,
+            attemptId: a.journeyAttempt,
+            seed: a.board.seed,
+            paths: a.board.targets.map((t) => t.path),
+            rescues: a.help.filter((h) => h.kind === "rescue").length,
+          },
+        ].slice(-300);
+      }
       event(s, "completion", {
         id: a.board.id,
         mode: a.mode,

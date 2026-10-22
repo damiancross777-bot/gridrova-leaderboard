@@ -9,6 +9,8 @@ import { setClockForTests } from "../lib/time.js";
 import { clearFlagCacheForTests } from "../lib/flags.js";
 import { settleDate, settleDue } from "../lib/settlement.js";
 import { clearRankCacheForTests } from "../lib/competition.js";
+import { JOURNEY_CONTENT_VERSION } from "../lib/journey.js";
+import { gameContentVersion } from "../lib/game.js";
 import { purgeOrphanSaves } from "../lib/saves.js";
 import { pack } from "../lib/game/storage.mjs";
 import { initialState } from "../lib/game/core.mjs";
@@ -482,7 +484,7 @@ test("nearby is honest about unranked and pending players and uses settlement ti
 // ================================================================ Champions (recorded online)
 const levels = JSON.parse(readFileSync(new URL("../lib/game/levels.json", import.meta.url), "utf8"));
 const jStart = (p, level, over = {}) =>
-  call("POST", "/v1/journey/start", { token: p.token, body: { level, contentVersion: 5, seed: levels[level - 1]?.seed ?? "none", ...over } });
+  call("POST", "/v1/journey/start", { token: p.token, body: { level, contentVersion: JOURNEY_CONTENT_VERSION, seed: levels[level - 1]?.seed ?? "none", ...over } });
 const jFinish = (p, attemptId, level, over = {}) =>
   call("POST", `/v1/journey/${encodeURIComponent(attemptId)}/finish`, {
     token: p.token,
@@ -499,6 +501,8 @@ test("journey recording checks board version, timing, solution and ownership", a
   const [a, b] = [await player(), await player()];
   assert.equal(code(await jStart(a, 12, { seed: "old-v4-seed" })), "CONTENT_MISMATCH");
   assert.equal(code(await jStart(a, 12, { contentVersion: 4 })), "CONTENT_MISMATCH");
+  // An app still on the previous catalogue gets an explicit mismatch, never a silent acceptance.
+  assert.equal(code(await jStart(a, 12, { contentVersion: JOURNEY_CONTENT_VERSION - 1 })), "CONTENT_MISMATCH");
   assert.equal(code(await jStart(a, 301)), "BAD_REQUEST");
   assert.equal(code(await jStart(a, 0)), "BAD_REQUEST");
   const s = (await jStart(a, 12)).body;
@@ -708,4 +712,40 @@ test("a deletion during an interrupted settlement stops that payout but the sett
   assert.equal(await settleDate("2026-10-20"), "complete");
   assert.equal((await awardsFor(ps[2].uid)).length, 0);
   assert.equal((await awardsFor(ps[1].uid)).length, 1);
+});
+
+// ================================================================ content-version transition
+test("journey catalogue and generator share the app's content version", async () => {
+  assert.equal(JOURNEY_CONTENT_VERSION, 6);
+  assert.equal(gameContentVersion, JOURNEY_CONTENT_VERSION);
+  assert.equal(levels.length, 300);
+  assert.ok(levels.every((b) => b.contentVersion === JOURNEY_CONTENT_VERSION));
+  const s = await (async () => { const p = await player(); return [p, (await jStart(p, 1)).body]; })();
+  assert.equal(s[1].contentVersion ?? JOURNEY_CONTENT_VERSION, JOURNEY_CONTENT_VERSION);
+});
+
+test("a ranked day created under earlier content keeps its stored board after an upgrade", async () => {
+  // Simulates deploying new content mid-UTC-day: today's challenge already exists from the old
+  // generator. Starts, finishes and rankings must keep using that stored board, not regenerate.
+  const [a, b] = [await player(), await player()];
+  const sa = (await start(a)).body;
+  const ref = db.doc("challenges/2026-10-20");
+  const stored = JSON.parse((await ref.get()).get("boardJson"));
+  const older = { ...stored, contentVersion: gameContentVersion - 1 };
+  await ref.update({ contentVersion: gameContentVersion - 1, boardJson: JSON.stringify(older) });
+  clock += 60_000;
+  const sb = (await start(b)).body;
+  assert.equal(sb.board.contentVersion, gameContentVersion - 1, "served the stored board");
+  assert.deepEqual({ ...sb.board, contentVersion: 0 }, { ...sa.board, contentVersion: 0 });
+  clock += 60_000;
+  const fa = await finish(a, sa);
+  const fb = await finish(b, sb);
+  assert.equal(fa.body.accepted, true, JSON.stringify(fa.body));
+  assert.equal(fb.body.accepted, true, JSON.stringify(fb.body));
+  // The next UTC day is generated with the current content.
+  clock = T("2026-10-21T01:00:00Z");
+  const c = await player();
+  const next = (await start(c)).body;
+  assert.equal(next.challengeDate, "2026-10-21");
+  assert.equal(next.board.contentVersion, gameContentVersion);
 });
