@@ -10,7 +10,7 @@ until every gate in section 1 is met and the owner says go.
 | Staging acceptance on the deployed commit | `scripts/staging-acceptance.mjs` 17/17 | Done on `a1a9e15` (v6). Rerun after PR #6 + #20 deploy. |
 | v6 ranked board live | Acceptance after 00:00 UTC 23 Oct: C5 `contentVersion 6`, `ranked:2026-10-23` | Scheduled for Fri 23 Oct 11:05 Sydney |
 | Real prize payout | Genuine phone result settles; exactly one award receipt and one ledger delta; duplicate claims don't re-pay | Pending owner's ranked phone game |
-| Least-privilege identity | PR #6 merged; acceptance + forced scheduler runs pass under `gridrova-api` | Pending owner IAM setup |
+| Least-privilege identity | PR #6 merged; acceptance + forced scheduler runs pass under `gridrova-api` | Done on staging (PR #22/#23, 17/17, both jobs 200 as gridrova-api) |
 | Privacy/retention | Pages corrected; tombstone TTL deployed; log retention verified | In progress |
 | Game build | Signed release AAB with production config, consent/age tests on real phones | Codex / owner |
 | Owner decision | Explicit go for production | Not given |
@@ -27,7 +27,13 @@ until every gate in section 1 is met and the owner says go.
    - custom role `gridrovaAuthRuntime` (`firebaseauth.users.get`, `firebaseauth.users.delete`);
    - service account `gridrova-api` with Cloud Datastore User + GridRova auth runtime (project);
    - Cloud Run Invoker on `settledaily` and `purgedeletedaccountsaves` only, granted after the first deploy
-     creates them. Then force-run both jobs.
+     creates them.
+   - **After every deploy**, point both Cloud Scheduler jobs at this identity. `firebase deploy` leaves existing jobs on
+     the default compute account (seen on staging, 22 Oct):
+     `gcloud scheduler jobs update http firebase-schedule-<settleDaily|purgeDeletedAccountSaves>-australia-southeast1 --location=australia-southeast1 --oidc-service-account-email=gridrova-api@gridrova-lb-prod.iam.gserviceaccount.com`
+     Then force-run both jobs and expect HTTP 200 with no ERROR logs.
+   - Custom role note: in the console's Add permissions dialog, filter by role "Firebase Authentication Admin"; the two
+     `firebaseauth.users.*` permissions are on page 2.
 6. Web API key: **API restrictions** to Identity Toolkit API + Token Service API only (as on staging). No
    Android-app restriction: the app calls these by plain HTTPS without the Android package/certificate
    headers, so that restriction would block sign-in.
