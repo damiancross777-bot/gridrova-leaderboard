@@ -12,6 +12,7 @@ import { clearRankCacheForTests } from "../lib/competition.js";
 import { JOURNEY_CONTENT_VERSION } from "../lib/journey.js";
 import { gameContentVersion } from "../lib/game.js";
 import { purgeOrphanSaves } from "../lib/saves.js";
+import { operatorDeleteByName, MIN_INACTIVE_DAYS } from "../lib/operator.js";
 import { pack } from "../lib/game/storage.mjs";
 import { initialState } from "../lib/game/core.mjs";
 import { readFileSync } from "node:fs";
@@ -748,4 +749,38 @@ test("a ranked day created under earlier content keeps its stored board after an
   const next = (await start(c)).body;
   assert.equal(next.challengeDate, "2026-10-21");
   assert.equal(next.board.contentVersion, gameContentVersion);
+});
+
+// ================================================================ retention and emailed deletion
+test("deletion tombstone expires after 30 days (TTL field set)", async () => {
+  const p = await player();
+  await start(p);
+  await call("DELETE", "/v1/me", { token: p.token });
+  const tomb = await db.doc(`deletedPlayers/${p.uid}`).get();
+  assert.ok(tomb.exists);
+  assert.equal(tomb.get("expireAt").toMillis(), clock + 30 * 86_400_000);
+});
+
+test("operator deletion by player name refuses recent, missing and ambiguous accounts, then deletes", async () => {
+  const p = await player();
+  await start(p); // creates the profile with its random player name
+  const name = (await db.doc(`players/${p.uid}`).get()).get("alias");
+  assert.equal((await operatorDeleteByName("No Such Player", { execute: true })).outcome, "not-found");
+  const recent = await operatorDeleteByName(name, { execute: true, nowMs: Date.now() });
+  assert.equal(recent.outcome, "recently-active");
+  assert.ok((await db.doc(`players/${p.uid}`).get()).exists, "recent account untouched");
+  const later = Date.now() + (MIN_INACTIVE_DAYS + 1) * 86_400_000;
+  const dry = await operatorDeleteByName(name, { execute: false, nowMs: later });
+  assert.equal(dry.outcome, "would-delete");
+  assert.ok((await db.doc(`players/${p.uid}`).get()).exists, "dry run changes nothing");
+  const twin = await player();
+  await start(twin);
+  await db.doc(`players/${twin.uid}`).update({ alias: name });
+  assert.equal((await operatorDeleteByName(name, { execute: true, nowMs: later })).outcome, "ambiguous");
+  await db.doc(`players/${twin.uid}`).update({ alias: "Other Name" });
+  const done = await operatorDeleteByName(name, { execute: true, nowMs: later });
+  assert.equal(done.outcome, "deleted");
+  assert.equal((await db.doc(`players/${p.uid}`).get()).exists, false);
+  assert.equal(code(await start(p)), "UNAUTHENTICATED", "sign-in removed");
+  assert.ok((await db.doc(`players/${twin.uid}`).get()).exists, "other player untouched");
 });
