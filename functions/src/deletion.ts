@@ -1,15 +1,19 @@
 // DELETE /v1/me — "Delete my online data". Works for anonymous players (no email needed): the
 // verified token identifies them. Removes everything the server holds about that player, redacts
 // them from public final standings, deletes the anonymous Firebase account, and leaves a minimal
-// tombstone (UID + time) so a settlement already in progress can never pay a deleted player.
+// tombstone (UID + time) so a settlement already in progress can never pay a deleted player. The
+// tombstone carries expireAt and is removed by a Firestore TTL policy after TOMBSTONE_DAYS: far longer
+// than the 7-day settlement lookback, and redaction has already removed the UID from settlements.
 // The player's game progress on their phone is untouched.
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { now } from "./time.js";
 import { auth, db, paths } from "./db.js";
 import type { Caller } from "./identity.js";
 
 export const DELETED_UID = "deleted";
 export const DELETED_NAME = "Deleted player";
 export const tombstone = (uid: string) => db.doc(`deletedPlayers/${uid}`);
+export const TOMBSTONE_DAYS = 30;
 
 async function deleteQuery(q: FirebaseFirestore.Query) {
   for (;;) {
@@ -22,9 +26,16 @@ async function deleteQuery(q: FirebaseFirestore.Query) {
 }
 
 export async function deleteMyData(caller: Caller) {
-  const uid = caller.uid;
+  return deletePlayerData(caller.uid);
+}
+
+/** Shared by DELETE /v1/me and the operator tool for emailed requests (operator.ts). */
+export async function deletePlayerData(uid: string) {
   // Tombstone first, so any concurrent settlement skips this player from now on.
-  await tombstone(uid).set({ deletedAt: FieldValue.serverTimestamp() });
+  await tombstone(uid).set({
+    deletedAt: FieldValue.serverTimestamp(),
+    expireAt: Timestamp.fromMillis(now() + TOMBSTONE_DAYS * 86_400_000),
+  });
 
   await db.recursiveDelete(paths.player(uid)); // profile, prize receipts, wallet ledger
   await Promise.all([
