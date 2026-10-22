@@ -1,1 +1,60 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.cloudfunctions.net https://*.a.run.app; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer"><title>GridRova — Daily Podium</title><link rel="stylesheet" href="./style.css"><script src="./script.js" defer></script></head><body><main><p class="eyebrow">GRIDROVA · THE DAILY PODIUM</p><h1>One puzzle. A world of discoveries.</h1><p>Daily winners receive permanent medals and in-game coins.</p><div class="podium"><article>🥇<strong>1st · 500 coins</strong></article><article>🥈<strong>2nd · 300 coins</strong></article><article>🥉<strong>3rd · 150 coins</strong></article></div><section><label for="date">Competition date (UTC)</label><input id="date" type="date"><button id="refresh">Refresh rankings</button><p id="status" role="status">Connecting to rankings…</p><ol id="entries"></ol></section><p>Days close at 00:00 UTC. Final prizes are issued after score checks. Claim prizes in GridRova. Coins have no cash value.</p></main></body></html>
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.cloudfunctions.net https://*.a.run.app; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>GridRova daily rankings</title>
+<meta name="description" content="Today's GridRova Daily Podium and past results.">
+<link rel="icon" type="image/png" href="/assets/favicon-64.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700;800&display=swap" rel="stylesheet">
+<!-- Branding is shared with the Phoneporium.AU site (damiancross777-bot.github.io repo, assets/site.css). -->
+<link rel="stylesheet" href="/assets/site.css?v=4">
+<script src="./script.js" defer></script>
+</head>
+<body>
+<header class="site-head"><div class="wrap">
+  <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">P</span>Phoneporium.AU</a>
+  <nav class="site-nav" aria-label="Main">
+    <a href="/gridrova/">GridRova</a>
+    <a href="/gridrova-leaderboard/" aria-current="page">Rankings</a>
+    <a href="/gridrova/support/">Support</a>
+    <a href="/gridrova/privacy/">Privacy</a>
+  </nav>
+</div></header>
+<main>
+<section class="feature"><div class="wrap">
+  <div class="banner">
+    <h1>The Daily Podium</h1>
+    <p>One ranked GridRova puzzle a day, the same for everyone. The fastest complete solves take the podium.</p>
+  </div>
+  <ol class="podium" aria-label="Daily prizes">
+    <li><span class="place p1">1</span><span><strong>First place</strong><span class="coins">500 coins</span></span></li>
+    <li><span class="place p2">2</span><span><strong>Second place</strong><span class="coins">300 coins</span></span></li>
+    <li><span class="place p3">3</span><span><strong>Third place</strong><span class="coins">150 coins</span></span></li>
+  </ol>
+  <section class="rank-panel" aria-labelledby="results-title">
+    <h2 id="results-title">Results</h2>
+    <div class="rank-controls">
+      <label for="date">Competition date (UTC)<input id="date" type="date"></label>
+      <button id="refresh" type="button">Refresh rankings</button>
+    </div>
+    <p id="status" class="rank-status" role="status">Connecting to rankings…</p>
+    <ol id="entries" class="rank-list"></ol>
+  </section>
+  <p class="fineprint">Each day closes at 00:00 UTC (11:00 am in Sydney during daylight saving). Final places are confirmed after score checks, and prizes are collected in the GridRova app. Coins are in-game only and have no cash value. Players appear under a randomly generated name.</p>
+</div></section>
+</main>
+<footer class="site-foot"><div class="wrap">
+  <p>Phoneporium.AU, an independent game developer in Australia. Contact <a href="mailto:phoneporium.au@gmail.com">phoneporium.au@gmail.com</a></p>
+  <nav aria-label="Footer">
+    <a href="/gridrova-leaderboard/">Daily rankings</a>
+    <a href="/gridrova/privacy/">Privacy policy</a>
+    <a href="/gridrova/delete-data/">Delete your data</a>
+    <a href="/gridrova/support/">Support</a>
+  </nav>
+</div></footer>
+</body>
+</html>
