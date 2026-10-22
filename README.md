@@ -104,15 +104,25 @@ A player's rank is three COUNT aggregations: Firestore bills about 1 read per 1,
 
 ## Server identity (least privilege)
 
-All functions run as `gridrova-api@<projectId>.iam.gserviceaccount.com`, not the default compute account (which has Editor on the whole project). Create it once per project **before** deploying (Google Cloud → IAM & Admin → Service accounts → Create), with only these roles:
+All three functions (`api`, `settleDaily`, `purgeDeletedAccountSaves`) run as
+`gridrova-api@<projectId>.iam.gserviceaccount.com`, not the default compute account (Editor on the whole
+project). Create it once per project **before** deploying this code. Grants, derived from the code's
+actual Google API calls (reviewed 22 Oct 2026):
 
-| Role | Why |
-|---|---|
-| Cloud Datastore User | Read/write game data in Firestore |
-| Firebase Authentication Viewer | Verify sign-in tokens, check revoked/disabled accounts |
-| Secret Manager Secret Accessor | Read `CHALLENGE_SALT` |
-| Logs Writer | Write function logs |
-| Cloud Run Invoker | Lets Cloud Scheduler trigger the scheduled jobs |
+| Grant | Scope | Code that needs it |
+|---|---|---|
+| Cloud Datastore User (`roles/datastore.user`) | Project | All Firestore reads/writes, transactions, COUNT queries, `recursiveDelete` (deletion.ts, settlement.ts, saves.ts, …) |
+| Custom role **GridRova auth runtime** = `firebaseauth.users.get` + `firebaseauth.users.delete` | Project | `verifyIdToken(…, checkRevoked)` and `getUsers` (users.get); `DELETE /v1/me` → `deleteUser` (users.delete). The predefined *Authentication Viewer* lacks delete; *Authentication Admin* is broader than needed. |
+| Secret Manager Secret Accessor | Secret `CHALLENGE_SALT` only | `defineSecret("CHALLENGE_SALT")`. `firebase deploy` adds this binding on the secret itself. |
+| Cloud Run Invoker | Cloud Run services `settledaily` and `purgedeletedaccountsaves` only | Cloud Scheduler calls the scheduled functions with an OIDC token for this identity. |
+
+Not granted: Owner/Editor, Logs Writer (Cloud Run captures stdout/stderr without it), Storage, Pub/Sub,
+IAM. The person deploying needs *Service Account User* on `gridrova-api` (project Owners have it).
+
+Acceptance under this identity: deploy, run `scripts/staging-acceptance.mjs` (includes `DELETE /v1/me`,
+C16), then **Force run** both Cloud Scheduler jobs and confirm each logs a run with no permission errors.
+Both jobs are idempotent (settlement skips closed/complete days; the purge only removes saves of deleted
+accounts).
 
 ## Rollback
 
