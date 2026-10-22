@@ -24,9 +24,11 @@ export function journeyProgress(state) {
   return new Set((state.completed || []).filter(id => Number.isInteger(id) && id >= 1 && id <= 300)).size;
 }
 export function hasCompletedJourney(state) { return journeyProgress(state) === 300; }
+// Gallery entries are "Recorded online": server-timed completions of all 300 levels. They are not
+// proof a human solved every puzzle, so the app never labels them "verified".
 export function validChampionsPage(data) {
   return !!data && Array.isArray(data.entries) && data.entries.length <= 100 &&
     (data.nextCursor == null || (typeof data.nextCursor === "string" && data.nextCursor.length <= 512)) &&
-    data.entries.every(e => e && typeof e.playerId === "string" && e.playerId.length > 0 && e.playerId.length <= 128 && typeof e.displayName === "string" && e.displayName.trim().length > 0 && e.displayName.length <= 24 && e.verified === true && e.completedLevels === 300 && typeof e.completedAt === "string" && Number.isFinite(Date.parse(e.completedAt))) &&
-    new Set(data.entries.map(e => e.playerId)).size === data.entries.length;
+    data.entries.every(e => e && typeof e.galleryId === "string" && e.galleryId.length > 0 && e.galleryId.length <= 128 && typeof e.displayName === "string" && e.displayName.trim().length > 0 && e.displayName.length <= 24 && e.recorded === true && e.completedLevels === 300 && typeof e.completedAt === "string" && Number.isFinite(Date.parse(e.completedAt))) &&
+    new Set(data.entries.map(e => e.galleryId)).size === data.entries.length;
 }

@@ -142,7 +142,7 @@ if (SLOW) {
     return { rank: lb.json.me.rank, nearbyRows: nb.json.entries.length };
   });
   await check("C12", "Journey level 1 records online after a server-timed attempt (Champions)", async () => {
-    const s = await http("POST", "/v1/journey/start", { token: a.token, body: { level: 1, contentVersion: 5, seed: levels[0].seed } });
+    const s = await http("POST", "/v1/journey/start", { token: a.token, body: { level: 1, contentVersion: levels[0].contentVersion, seed: levels[0].seed } });
     if (code(s) === "NOT_OPEN") throw new Error("NOT_OPEN — championsRecordingEnabled is not true on staging");
     ok(s.status === 200 && s.json.attemptId, `start ${s.status} ${code(s)}`);
     await sleep(8_500);
@@ -150,6 +150,7 @@ if (SLOW) {
     ok(f.json?.recorded === true && f.json.recordedLevels === 1, `finish ${f.status} ${code(f)}`);
     const p = await http("GET", "/v1/journey/progress", { token: a.token });
     ok(JSON.stringify(p.json?.levels) === "[1]", "progress mismatch");
+    return { journeyContentVersion: levels[0].contentVersion };
   });
 }
 await check("C13", "Champions gallery responds with the recorded-online shape and no UIDs", async () => {

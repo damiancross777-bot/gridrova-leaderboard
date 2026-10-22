@@ -1,4 +1,5 @@
-import { hash, initialState, reduce } from "./core.mjs";
+import {upgradeReadability} from "./presentation.mjs";
+import { hash, initialState, reduce, upgradeAdPolicy } from "./core.mjs";
 const MAIN = "gridrova.state.v1",
   BACKUP = MAIN + ".backup";
 export function pack(s) {
@@ -71,6 +72,7 @@ export class GameStore {
       ...initialState().settings,
       ...this.state.settings,
     };
+    this.state = upgradeAdPolicy(upgradeReadability(this.state));
     if (valid.length && previousKeys.length) {
       const encoded = pack(this.state);
       await this.adapter.setItem(BACKUP, encoded);
@@ -130,7 +132,7 @@ export class GameStore {
     const run = async () => {
       const incoming=unpack(snapshot);
       if(!incoming)throw Error("The backup checksum is invalid.");
-      const old=pack(this.state), next={...incoming,settings:{...initialState().settings,...incoming.settings},revision:this.state.revision+1};
+      const old=pack(this.state), next={...upgradeAdPolicy(upgradeReadability({...incoming,settings:{...initialState().settings,...incoming.settings}})),revision:this.state.revision+1};
       await this.adapter.setItem(MAIN+".beforeRestore",old);
       try {
         await this.adapter.setItem(BACKUP,old);
