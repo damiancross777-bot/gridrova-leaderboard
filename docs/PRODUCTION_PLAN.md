@@ -95,12 +95,20 @@ Also re-check log retention once production has real traffic (`gcloud logging bu
 
 ## 5. Smoke checks on production (read-only first)
 
-`scripts/staging-acceptance.mjs` refuses non-staging URLs on purpose, so production gets:
-1. Read-only checks: `GET /v1/public/leaderboard?date=<today>` returns JSON; an unknown route returns API
-   JSON; `https://phoneporium.au` is allowed by CORS and another origin is refused.
-2. With `rankedStartsEnabled=true`: one owner ranked game on the **signed production build**, which appears
-   on the public board; then force-run `settleDaily` the next day and collect.
-3. Deletion from the production build's Settings for a **separate test install**, never a real player.
+`scripts/staging-acceptance.mjs` refuses non-staging URLs on purpose, so production uses its own
+`scripts/production-smoke.mjs` (refuses any URL without `gridrova-lb-prod`; neither script can hit the wrong
+project). It runs read-only route/security checks (P0–P3), then one disposable anonymous identity plays today's
+ranked board once and is deleted (P4–P10); it never mints a prize or edits a frozen day, and with ranked starts
+still off P5/P6 report "closed correctly" rather than failing.
+
+```powershell
+node scripts/production-smoke.mjs --api-key <PROD Web API key>
+```
+
+Then, separately:
+- With `rankedStartsEnabled=true`: one owner ranked game on the **signed production build**, which appears on the
+  public board; then force-run `settleDaily` the next day and collect.
+- Deletion from the production build's Settings for a **separate test install**, never a real player.
 
 ## 6. Switching on the public site and the app
 
