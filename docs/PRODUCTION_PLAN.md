@@ -11,7 +11,7 @@ until every gate in section 1 is met and the owner says go.
 | v6 ranked board live | Acceptance after 00:00 UTC 23 Oct: C5 `contentVersion 6`, `ranked:2026-10-23` | Scheduled for Fri 23 Oct 11:05 Sydney |
 | Real prize payout | Genuine phone result settles; exactly one award receipt and one ledger delta; duplicate claims don't re-pay | Pending owner's ranked phone game |
 | Least-privilege identity | PR #6 merged; acceptance + forced scheduler runs pass under `gridrova-api` | Done on staging (PR #22/#23, 17/17, both jobs 200 as gridrova-api) |
-| Privacy/retention | Pages corrected; tombstone TTL deployed; log retention verified | In progress |
+| Privacy/retention | Pages corrected; staging tombstone TTL ACTIVE; log retention evidence archived | Done for staging (23 Oct). **Production TTL activation still to verify after its first deploy — see §3a** |
 | Game build | Signed release AAB with production config, consent/age tests on real phones | Codex / owner |
 | Owner decision | Explicit go for production | Not given |
 
@@ -61,6 +61,24 @@ Indexes deployed from `firestore.indexes.json`. Wait until all show **Enabled**.
 
 The emulator never enforces indexes. A missing index shows up only live, as a 500 error. That's why the
 rank-count indexes were added after the 22 Oct staging run.
+
+### 3a. Verify the TTL policies activate (required)
+
+Evidence captured 23 Oct 2026 shows production has **0 Firestore TTL fields**: the two `ttl: true` field
+overrides above exist only in `firestore.indexes.json` and are created by the first
+`firebase deploy --only firestore` against production. Until that deploy, production deletion markers would never
+expire, which would contradict the published 30-day statement. So, immediately after the deploy:
+
+```bash
+gcloud firestore fields ttls list --project=gridrova-lb-prod --format="table(name.basename(),ttlConfig.state)"
+```
+
+Pass: **two** fields listed — `deletedPlayers.expireAt` and `rateLimits.expireAt` — both `state=ACTIVE`
+(`CREATING` means still building; re-check). Record the output alongside the deploy log. Do not switch
+`rankedStartsEnabled` on until both are ACTIVE.
+
+Also re-check log retention once production has real traffic (`gcloud logging buckets list`): `_Default` 30 days,
+`_Required` 400 days locked, and no non-default sinks — the values the published pages state.
 
 ## 4. Final switches (`config/leaderboard`)
 
